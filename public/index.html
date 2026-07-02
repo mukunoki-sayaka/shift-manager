@@ -600,9 +600,35 @@ td.shift-cell { position: relative; }
       </select>
     </div>
     <div class="ai-log" id="monthLog"></div>
-    <div class="modal-footer">
+    <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
       <button class="btn-cancel" onclick="closeMonthModal()">キャンセル</button>
+      <button class="btn-generate" style="background:#7F1D1D;color:#FCA5A5;border:none" onclick="openClearMonthConfirm()">🗑 月シフトクリア</button>
       <button class="btn-generate" style="background:#0F766E" onclick="runMonthShift()">📅 月次生成する</button>
+    </div>
+  </div>
+</div>
+
+<!-- CLEAR CONFIRM MODAL -->
+<div class="modal-overlay" id="clearMonthModal" onclick="if(event.target===this)closeClearMonthModal()">
+  <div class="modal">
+    <h3>🗑 月シフトクリア</h3>
+    <p class="modal-sub">選択した月・アカウントのシフトをすべて削除します。</p>
+    <div class="modal-section">
+      <label>対象年月</label>
+      <select id="clear-year-sel" style="width:100%"></select>
+    </div>
+    <div class="modal-section">
+      <label>対象アカウント</label>
+      <select id="clear-acc-sel" style="width:100%">
+        <option value="all">すべてのアカウント</option>
+      </select>
+    </div>
+    <div style="background:#450A0A;border:1px solid #7F1D1D;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#FCA5A5">
+      ⚠ この操作は元に戻せません。削除後はSupabaseにも反映されます。
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeClearMonthModal()">キャンセル</button>
+      <button class="btn-generate" style="background:#7F1D1D;color:#FCA5A5;border:none" onclick="runClearMonthShift()">🗑 クリア実行</button>
     </div>
   </div>
 </div>
@@ -1709,6 +1735,74 @@ function getRequestTimeConflicts(sIdx, key, accId){
   return blocked;
 }
 
+function openClearMonthConfirm(){
+  // 年月セレクト（月次生成と同じ選択肢）
+  const sel=document.getElementById('clear-year-sel');
+  if(sel){
+    sel.innerHTML='';
+    const now=new Date();
+    for(let i=-1;i<=6;i++){
+      const d=new Date(now.getFullYear(),now.getMonth()+i,1);
+      const y=d.getFullYear(),m=d.getMonth();
+      const opt=document.createElement('option');
+      opt.value=`${y}-${m}`;
+      opt.textContent=`${y}年${m+1}月`;
+      if(i===1) opt.selected=true;
+      sel.appendChild(opt);
+    }
+  }
+  // アカウントセレクト
+  const accSel=document.getElementById('clear-acc-sel');
+  if(accSel){
+    accSel.innerHTML='<option value="all">すべてのアカウント</option>'+
+      accounts.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+  }
+  document.getElementById('clearMonthModal').classList.add('open');
+}
+function closeClearMonthModal(){document.getElementById('clearMonthModal').classList.remove('open');}
+
+function runClearMonthShift(){
+  const [yr,mo]=document.getElementById('clear-year-sel').value.split('-').map(Number);
+  const targetAccId=document.getElementById('clear-acc-sel').value;
+  const targetAccs=targetAccId==='all'?accounts:accounts.filter(a=>a.id===targetAccId);
+
+  // 対象月の全週を列挙
+  const weeks=[];
+  const firstDay=new Date(yr,mo,1);
+  const lastDay=new Date(yr,mo+1,0);
+  let cur=new Date(firstDay);
+  const seen=new Set();
+  while(cur<=lastDay){
+    const off=getWeekOffsetForDate(cur);
+    if(!seen.has(off)){seen.add(off);weeks.push(off);}
+    cur.setDate(cur.getDate()+7);
+  }
+
+  let cleared=0;
+  targetAccs.forEach(acc=>{
+    if(!shifts[acc.id]) return;
+    staff.forEach((_,sIdx)=>{
+      weeks.forEach(wOff=>{
+        const days_dates=getWeekDates(wOff);
+        days_dates.forEach((d,dIdx)=>{
+          if(d.getMonth()!==mo||d.getFullYear()!==yr) return;
+          const key=`${wOff}_${dIdx}`;
+          if(getShift(acc.id,sIdx,key)){
+            setShift(acc.id,sIdx,key,null);
+            cleared++;
+          }
+        });
+      });
+    });
+  });
+
+  saveShiftsDB().then(()=>{
+    buildTable();
+    closeClearMonthModal();
+    const accName=targetAccId==='all'?'全アカウント':getAcc(targetAccId)?.name;
+    alert(`✅ ${yr}年${mo+1}月（${accName}）のシフトを${cleared}件クリアしました。`);
+  });
+}
 function openAIModal(){const sel=document.getElementById('ai-account');sel.innerHTML='<option value="all">すべてのアカウント</option>'+accounts.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');document.getElementById('shiftTypeGrid').innerHTML=['morning','noon','night','off'].map(t=>{const s=SHIFT_TYPES[t],on=aiShiftTypes.has(t);return`<button class="shift-type-toggle ${s.cls}${on?' selected':''}" onclick="toggleShiftType('${t}',this)">${s.label}</button>`;}).join('');document.getElementById('aiLog').style.display='none';document.getElementById('aiLog').textContent='';document.getElementById('aiModal').classList.add('open');}
 function closeAIModal(){document.getElementById('aiModal').classList.remove('open');}
 function toggleShiftType(t,btn){if(aiShiftTypes.has(t)){aiShiftTypes.delete(t);btn.classList.remove('selected');}else{aiShiftTypes.add(t);btn.classList.add('selected');}}
