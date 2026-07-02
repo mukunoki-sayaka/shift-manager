@@ -1036,9 +1036,11 @@ function buildStaffCards(){
       const isDual=(s.roles||[]).length>1||(s.roles||[]).includes('creator')&&(s.roles||[]).includes('assistant');
       const roleSelector=on&&isDual?`
         <select onchange="setStaffAccRole(${sIdx},'${a.id}',this.value)" onclick="event.stopPropagation()" style="background:#0F172A;border:none;color:${a.color};font-size:9px;font-weight:700;outline:none;margin-left:2px;cursor:pointer">
-          <option value="" ${!accRole?'selected':''}>優先役割</option>
-          <option value="creator" ${accRole==='creator'?'selected':''}>🎬 CR固定</option>
-          <option value="assistant" ${accRole==='assistant'?'selected':''}>🎧 AS固定</option>
+          <option value="" ${!accRole?'selected':''}>🔄 自動（優先役割）</option>
+          <option value="creator_priority" ${accRole==='creator_priority'?'selected':''}>🎬 CR優先（不足時ASも可）</option>
+          <option value="assistant_priority" ${accRole==='assistant_priority'?'selected':''}>🎧 AS優先（不足時CRも可）</option>
+          <option value="creator" ${accRole==='creator'?'selected':''}>🎬🔒 CR固定（CRのみ）</option>
+          <option value="assistant" ${accRole==='assistant'?'selected':''}>🎧🔒 AS固定（ASのみ）</option>
         </select>`:'';
       return`<div class="acc-assign-chip${on?'':' off'}" style="${on?`background:${a.color}25;border-color:${a.color};color:${a.color}`:''}" onclick="toggleStaffAcc(${sIdx},'${a.id}')"><div style="width:6px;height:6px;border-radius:50%;background:${on?a.color:'#475569'}"></div>${a.name}${roleSelector}</div>`;
     }).join('');
@@ -1631,12 +1633,16 @@ function runMonthShift(){
       const isAS=(s)=>getPrimaryRole(s,acc.id)==='assistant';
       const canBeCR=(s)=>{
         const accRole=s.accountRoles?.[acc.id];
-        if(accRole) return accRole==='creator';
+        if(accRole==='assistant') return false; // AS固定なのでCR不可
+        if(accRole==='creator'||accRole==='creator_priority') return true; // CR固定/優先
+        if(accRole==='assistant_priority') return getRoles(s).includes('creator'); // AS優先だが不足時はCR可
         return getRoles(s).includes('creator');
       };
       const canBeAS=(s)=>{
         const accRole=s.accountRoles?.[acc.id];
-        if(accRole) return accRole==='assistant';
+        if(accRole==='creator') return false; // CR固定なのでAS不可
+        if(accRole==='assistant'||accRole==='assistant_priority') return true; // AS固定/優先
+        if(accRole==='creator_priority') return getRoles(s).includes('assistant'); // CR優先だが不足時はAS可
         return getRoles(s).includes('assistant');
       };
       const isOff=(sIdx,key)=>{const r=getRequest(sIdx,key);return r==='off'||r?.type==='off';};
@@ -1709,9 +1715,23 @@ function runMonthShift(){
               return true;
             })
             .sort((a,b)=>{
-              // 優先役割が一致するスタッフを先に
-              const aPri=(role==='creator'?isCR(a.s):isAS(a.s))?0:1;
-              const bPri=(role==='creator'?isCR(b.s):isAS(b.s))?0:1;
+              // アカウント固定/優先役割が一致するスタッフを先に
+              const getAccRolePriority=(s,role)=>{
+                const accRole=s.accountRoles?.[acc.id];
+                if(role==='creator'){
+                  if(accRole==='creator') return 0; // CR固定
+                  if(accRole==='creator_priority') return 1; // CR優先
+                  if(isCR(s)) return 2; // primaryRoleがCR
+                  return 3;
+                } else {
+                  if(accRole==='assistant') return 0;
+                  if(accRole==='assistant_priority') return 1;
+                  if(isAS(s)) return 2;
+                  return 3;
+                }
+              };
+              const aPri=getAccRolePriority(a.s,role);
+              const bPri=getAccRolePriority(b.s,role);
               if(aPri!==bPri) return aPri-bPri;
               const aW=hasReqWork(a.i,key)?0:(plannedDays[a.i]?.has(dIdx)?1:2);
               const bW=hasReqWork(b.i,key)?0:(plannedDays[b.i]?.has(dIdx)?1:2);
