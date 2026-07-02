@@ -1561,7 +1561,36 @@ function runMonthShift(){
           const isOff=dayReq==='off'||dayReq?.type==='off';
           if(isOff) continue;
           const crossConflicts=getCrossAccConflicts(i,key,acc.id);
-          const availSlots=useShifts.filter(t=>(slotCount[t]||0)<maxPerSlot&&!crossConflicts.has(t));
+          const timeConflicts=getRequestTimeConflicts(i,key,acc.id);
+          const allConflicts=new Set([...crossConflicts,...timeConflicts]);
+
+          // 時間指定申請がある場合はカスタム枠も候補に追加
+          const reqForSlot=getRequest(i,key);
+          let candidateSlots=[...useShifts];
+          if(reqForSlot?.type==='custom'&&reqForSlot.start&&reqForSlot.end){
+            const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m;};
+            const fmt2=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+            const rs=toMin(reqForSlot.start), re=toMin(reqForSlot.end);
+            // 希望時間がどの標準枠にも完全に収まらない場合、カスタム枠を作って追加
+            const fullyInAny=useShifts.some(t=>{
+              const def=getShiftDef(acc.id,t);
+              if(!def?.sub) return false;
+              const[ss,se]=def.sub.split('〜').map(toMin);
+              return rs>=ss&&re<=se;
+            });
+            if(!fullyInAny){
+              const customId=`custom_${fmt2(rs)}_${fmt2(re)}`;
+              const accObj=getAcc(acc.id);
+              if(accObj){
+                if(!accObj.customShifts) accObj.customShifts=[];
+                if(!accObj.customShifts.find(cs=>cs.id===customId)){
+                  accObj.customShifts.push({id:customId,label:'希望時間',start:fmt2(rs),end:fmt2(re)});
+                }
+              }
+              candidateSlots=[customId,...candidateSlots];
+            }
+          }
+          const availSlots=candidateSlots.filter(t=>(slotCount[t]||0)<maxPerSlot&&!allConflicts.has(t));
           if(!availSlots.length) continue;
           const alreadyWorking=accStaff.filter(({i:wi})=>{const sh=getShift(acc.id,wi,key);return sh&&sh.type!=='off';}).map(({i})=>i);
           const hasBad=alreadyWorking.some(w=>(s.compat[w]??staff[w]?.compat[i])==='bad');
@@ -1660,6 +1689,24 @@ function getCrossAccConflicts(sIdx, key, excludeAccId){
     if(sh&&sh.type!=='off'&&sh.type!=='requested-off') conflictSlots.add(sh.type);
   });
   return conflictSlots;
+}
+
+// 時間指定申請がある場合、その時間と重ならないスロットを除外する
+function getRequestTimeConflicts(sIdx, key, accId){
+  const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m;};
+  const req=getRequest(sIdx,key);
+  if(!req||req.type!=='custom'||!req.start||!req.end) return new Set();
+  const rs=toMin(req.start), re=toMin(req.end);
+  const blocked=new Set();
+  // 標準シフト（朝/昼/夜）のみ確認（カスタム枠は除外しない）
+  ['morning','noon','night'].forEach(t=>{
+    const def=getShiftDef(accId,t);
+    if(!def?.sub) return;
+    const[ss,se]=def.sub.split('〜').map(toMin);
+    const overlap=Math.max(0,Math.min(re,se)-Math.max(rs,ss));
+    if(overlap<=0) blocked.add(t); // 希望時間と重ならない標準スロットはブロック
+  });
+  return blocked;
 }
 
 function openAIModal(){const sel=document.getElementById('ai-account');sel.innerHTML='<option value="all">すべてのアカウント</option>'+accounts.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');document.getElementById('shiftTypeGrid').innerHTML=['morning','noon','night','off'].map(t=>{const s=SHIFT_TYPES[t],on=aiShiftTypes.has(t);return`<button class="shift-type-toggle ${s.cls}${on?' selected':''}" onclick="toggleShiftType('${t}',this)">${s.label}</button>`;}).join('');document.getElementById('aiLog').style.display='none';document.getElementById('aiLog').textContent='';document.getElementById('aiModal').classList.add('open');}
