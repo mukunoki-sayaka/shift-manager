@@ -1684,15 +1684,21 @@ function runMonthShift(){
         plannedDays[sIdx]=new Set([...alreadySet,...wantWork,...freeDays.slice(0,freeSlots)]);
       });
 
-      // 各日・各時間帯にCR+ASを1セット割り当て
+      // 各日・各時間帯にCR+ASを1セット割り当て（配信スケジュールがある日のみ）
       for(const dIdx of validDIdx){
         const key=`${wOff}_${dIdx}`;
         // この日の配信時間帯（スケジュールから）
         const schedTypes=getSchedShiftTypes(dIdx);
-        // 配信がない日は通常割り当て
-        const targetSlots=schedTypes.length?schedTypes:useShifts;
 
-        for(const slotType of targetSlots){
+        // 配信スケジュールがない日はお休み → 全員offを設定してスキップ
+        if(!schedTypes.length){
+          accStaff.forEach(({i:sIdx})=>{
+            if(!getShift(acc.id,sIdx,key)) setShift(acc.id,sIdx,key,'off',true);
+          });
+          continue;
+        }
+
+        for(const slotType of schedTypes){
           // すでにCR・ASが埋まっているか確認
           const inSlot=accStaff.filter(({i})=>{
             const sh=getShift(acc.id,i,key);
@@ -1763,25 +1769,8 @@ function runMonthShift(){
           }
         }
 
-        // 配信スケジュールがない日はそのアカウントはお休み → 割り当てしない
-        if(!schedTypes.length){
-          if(monthShiftTypes.has('off')){
-            accStaff.forEach(({i:sIdx})=>{
-              if(!getShift(acc.id,sIdx,key)) setShift(acc.id,sIdx,key,'off',true);
-            });
-          }
-          continue;
-        }
       }
 
-      if(monthShiftTypes.has('off')){
-        accStaff.forEach(({i:sIdx})=>{
-          validDIdx.forEach(dIdx=>{
-            const key=`${wOff}_${dIdx}`;
-            if(!getShift(acc.id,sIdx,key))setShift(acc.id,sIdx,key,'off',true);
-          });
-        });
-      }
       accStaff.forEach(({s,i})=>log(`  ✅ [${acc.name}] ${s.name}: ${workCount[i]}日稼働`));
     });
   });
