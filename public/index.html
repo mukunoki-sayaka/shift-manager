@@ -515,6 +515,15 @@ td.shift-cell { position: relative; }
     <div id="staffCalBody" style="overflow-x:auto"></div>
   </div>
 </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <select id="staffCalSel" onchange="buildStaffMonthCal()" style="background:#1E293B;border:1px solid #334155;color:#E2E8F0;border-radius:7px;padding:6px 12px;font-size:13px;font-weight:700;outline:none"></select>
+      <button onclick="staffCalPrev()" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:16px">‹</button>
+      <span id="staffCalMonthLabel" style="font-size:14px;font-weight:800;color:#F1F5F9"></span>
+      <button onclick="staffCalNext()" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:16px">›</button>
+    </div>
+    <div id="staffCalBody" style="overflow-x:auto"></div>
+  </div>
+</div>
 <div class="panel" id="panel-accounts" style="display:none">
   <div class="controls-row">
     <button class="btn-sm btn-primary" onclick="addAccount()">＋ アカウント追加</button>
@@ -2162,19 +2171,19 @@ let adminStaffCalYear=new Date().getFullYear(), adminStaffCalMonth=new Date().ge
 
 function switchCalTab(tab){
   const isAcc=tab==='acc';
+  // calContainerとstaffCalContainerの表示切替
   const accEl=document.getElementById('calContainer');
   const staffEl=document.getElementById('staffCalContainer');
-  if(accEl){ accEl.style.display=isAcc?'block':'none'; }
-  if(staffEl){ staffEl.style.display=isAcc?'none':'block'; }
+  if(accEl) accEl.style.display=isAcc?'block':'none';
+  if(staffEl) staffEl.style.display=isAcc?'none':'block';
+  // タブボタンのスタイル
   const tabAcc=document.getElementById('cal-tab-acc');
   const tabStaff=document.getElementById('cal-tab-staff');
-  if(tabAcc){ tabAcc.style.borderBottomColor=isAcc?'#7C3AED':'transparent'; tabAcc.style.color=isAcc?'#F1F5F9':'#64748B'; }
-  if(tabStaff){ tabStaff.style.borderBottomColor=isAcc?'transparent':'#7C3AED'; tabStaff.style.color=isAcc?'#64748B':'#F1F5F9'; }
-  if(isAcc){
-    buildCalendar();
-  } else {
-    initStaffMonthCal();
-  }
+  if(tabAcc){tabAcc.style.borderBottomColor=isAcc?'#7C3AED':'transparent';tabAcc.style.color=isAcc?'#F1F5F9':'#64748B';}
+  if(tabStaff){tabStaff.style.borderBottomColor=isAcc?'transparent':'#7C3AED';tabStaff.style.color=isAcc?'#64748B':'#F1F5F9';}
+  // 描画
+  if(isAcc) buildCalendar();
+  else initStaffMonthCal();
 }
 
 function initStaffMonthCal(){
