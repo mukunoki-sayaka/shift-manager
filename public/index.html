@@ -817,7 +817,7 @@ function buildTable(){
         tr+=`<td class="shift-cell" style="background:#1a0a0a;cursor:default"><div style="font-size:8px;color:#4B1515;text-align:center;padding:4px">🚫<br>不在</div></td>`;
       } else {
         tr+=`<td class="${cellCls}" onclick="${isPatternOff?'':` openShiftModal(${sIdx},'${key}')`}" style="${isPatternOff?'cursor:default;opacity:0.4':''}">`;
-        tr+=isPatternOff?`<div class="shift-badge off" style="font-size:9px">${isHoliday(d)?'祝休':isWeekend(d)?'週末休':'平日休'}</div>`:renderBadge(sh,isFixed,req);
+        tr+=isPatternOff?`<div class="shift-badge off" style="font-size:9px">${isHoliday(d)?'祝休':isWeekend(d)?'週末休':'平日休'}</div>`:renderBadge(sh,isFixed,req,sIdx);
         if(unmet)tr+=`<div class="unmet-badge">未反映</div>`;
         tr+=`</td>`;
       }
@@ -850,7 +850,7 @@ function buildTable(){
   const tableFoot=document.getElementById('tableFoot');
   if(tableFoot) tableFoot.innerHTML=fr;
 }
-function renderBadge(sh,fixed=false,req=null){
+function renderBadge(sh,fixed=false,req=null,sIdx=-1){
   const reqType = req?.type||req;
   if(!sh){
     if(reqType==='off')  return`<div class="shift-badge requested-off"><span class="req-off-icon">🙏</span><span>希望休</span></div>`;
@@ -859,16 +859,24 @@ function renderBadge(sh,fixed=false,req=null){
     return`<div class="shift-badge empty">${fixed?'🔒':'＋'}</div>`;
   }
   if(sh.type==='requested-off') return`<div class="shift-badge requested-off${sh.auto?' auto':''}${fixed?' fixed':''}"><span class="req-off-icon">🙏</span><span>希望休</span></div>`;
-  // 標準 or カスタムシフトを解決
   const sDef = getShiftDef(currentAccId, sh.type);
   if(!sDef) return`<div class="shift-badge empty">?</div>`;
   const isCustom = !SHIFT_TYPES[sh.type];
   const reqDot=reqType==='work'?`<span style="font-size:7px;color:#6EE7B7">✋</span>`:reqType==='custom'?`<span style="font-size:7px;color:#93C5FD">⏱</span>`:'';
-  // 役割アイコン
-  const roleIcon=sh.role==='creator'?`<span style="font-size:8px;background:#7C3AED;color:white;border-radius:3px;padding:0 3px">CR</span>`:sh.role==='assistant'?`<span style="font-size:8px;background:#0369A1;color:white;border-radius:3px;padding:0 3px">AS</span>`:'';
+  // 役割バッジ：シフトに保存されたrole → なければprimaryRoleから推定
+  let displayRole=sh.role;
+  if(!displayRole&&sIdx>=0&&staff[sIdx]){
+    displayRole=staff[sIdx].primaryRole||(staff[sIdx].roles?.[0])||null;
+  }
+  let roleTag='';
+  if(displayRole==='creator'){
+    roleTag=`<span style="display:block;font-size:9px;font-weight:800;background:#4C1D95;color:#DDD6FE;border-radius:3px;padding:0 4px;margin-bottom:1px;text-align:center">🎬 CR</span>`;
+  } else if(displayRole==='assistant'){
+    roleTag=`<span style="display:block;font-size:9px;font-weight:800;background:#0C4A6E;color:#BAE6FD;border-radius:3px;padding:0 4px;margin-bottom:1px;text-align:center">🎧 AS</span>`;
+  }
   const badgeCls = isCustom ? 'custom' : sDef.cls;
   const customStyle = isCustom ? 'background:#1E1B4B;color:#A78BFA;' : '';
-  return`<div class="shift-badge ${badgeCls}${sh.auto?' auto':''}${fixed?' fixed':''}" style="${customStyle}">${fixed?'<span class="fixed-icon">🔒</span>':''}${reqDot}${roleIcon}<span>${sDef.label}</span>${sDef.sub&&!fixed?`<span class="badge-label">${sDef.sub}</span>`:''}</div>`;
+  return`<div class="shift-badge ${badgeCls}${sh.auto?' auto':''}${fixed?' fixed':''}" style="${customStyle};display:flex;flex-direction:column;align-items:center;gap:1px;padding:3px 4px">${fixed?'<span class="fixed-icon">🔒</span>':''}${roleTag}${reqDot}<span>${sDef.label}</span>${sDef.sub&&!fixed?`<span class="badge-label">${sDef.sub}</span>`:''}</div>`;
 }
 function openShiftModal(sIdx,key){
   currentCell={sIdx,key};
@@ -1022,7 +1030,18 @@ function buildStaffCards(){
   staff.map((s,i)=>({s,i})).sort((a,b)=>order[a.s.priority]-order[b.s.priority]).forEach(({s,i:sIdx})=>{
     const otherOpts=staff.map((o,i)=>i!==sIdx?`<option value="${i}">${o.name}</option>`:'').join('');
     const compatHtml=Object.entries(s.compat).map(([tIdx,rel])=>{const n=staff[tIdx]?.name;return n?`<div class="compat-chip ${rel}">${rel==='good'?'♥':'✗'} ${n}<button onclick="removeCompat(${sIdx},${tIdx})">✕</button></div>`:''}).join('');
-    const accChips=accounts.map(a=>{const on=(s.accounts||[]).includes(a.id);return`<div class="acc-assign-chip${on?'':' off'}" style="${on?`background:${a.color}25;border-color:${a.color};color:${a.color}`:''}" onclick="toggleStaffAcc(${sIdx},'${a.id}')"><div style="width:6px;height:6px;border-radius:50%;background:${on?a.color:'#475569'}"></div>${a.name}</div>`;}).join('');
+    const accChips=accounts.map(a=>{
+      const on=(s.accounts||[]).includes(a.id);
+      const accRole=s.accountRoles?.[a.id]||null;
+      const isDual=(s.roles||[]).length>1||(s.roles||[]).includes('creator')&&(s.roles||[]).includes('assistant');
+      const roleSelector=on&&isDual?`
+        <select onchange="setStaffAccRole(${sIdx},'${a.id}',this.value)" onclick="event.stopPropagation()" style="background:#0F172A;border:none;color:${a.color};font-size:9px;font-weight:700;outline:none;margin-left:2px;cursor:pointer">
+          <option value="" ${!accRole?'selected':''}>優先役割</option>
+          <option value="creator" ${accRole==='creator'?'selected':''}>🎬 CR固定</option>
+          <option value="assistant" ${accRole==='assistant'?'selected':''}>🎧 AS固定</option>
+        </select>`:'';
+      return`<div class="acc-assign-chip${on?'':' off'}" style="${on?`background:${a.color}25;border-color:${a.color};color:${a.color}`:''}" onclick="toggleStaffAcc(${sIdx},'${a.id}')"><div style="width:6px;height:6px;border-radius:50%;background:${on?a.color:'#475569'}"></div>${a.name}${roleSelector}</div>`;
+    }).join('');
     const fixedGrid=['月','火','水','木','金','土','日'].map((dn,i)=>{const wd=i===6?0:i+1,fixed=s.fixedDays?.[wd],cls=fixed?`fday-${fixed}`:'',lbl=fixed?SHIFT_TYPES[fixed]?.label.slice(0,1)||'休':'';return`<div class="fday-item"><div class="fday-name">${dn}</div><div class="fday-btn ${cls}" onclick="cycleDayFixed(${sIdx},${wd})">${lbl||'─'}</div></div>`;}).join('');
     const sRoles=s.roles||(s.role?[s.role]:['assistant']);
     const primaryRole=s.primaryRole||(sRoles.includes('creator')?'creator':'assistant');
@@ -1064,6 +1083,11 @@ function buildStaffCards(){
   });
 }
 function toggleStaffAcc(sIdx,accId){if(!staff[sIdx].accounts)staff[sIdx].accounts=[];const idx=staff[sIdx].accounts.indexOf(accId);if(idx>=0)staff[sIdx].accounts.splice(idx,1);else staff[sIdx].accounts.push(accId);buildStaffCards();buildTable();}
+function setStaffAccRole(sIdx,accId,role){
+  if(!staff[sIdx].accountRoles) staff[sIdx].accountRoles={};
+  staff[sIdx].accountRoles[accId]=role||null;
+  debouncedSaveStaff();
+}
 function toggleRole(sIdx,role){
   if(!staff[sIdx].roles) staff[sIdx].roles=[];
   const idx=staff[sIdx].roles.indexOf(role);
@@ -1595,14 +1619,26 @@ function runMonthShift(){
       const useShifts = (acc.shifts?.length ? types.filter(t=>acc.shifts.includes(t)) : types);
       const maxPerSlot = acc.maxPerSlot||2;
 
-      // ヘルパー：役割取得（兼務はprimaryRoleを優先）
+      // ヘルパー：役割取得（兼務はアカウント固定役割→primaryRoleの順で優先）
       const getRoles=(s)=>s.roles||( s.role?[s.role]:['assistant']);
-      const getPrimaryRole=(s)=>s.primaryRole||(getRoles(s)[0])||'assistant';
-      const isCR=(s)=>getPrimaryRole(s)==='creator';
-      const isAS=(s)=>getPrimaryRole(s)==='assistant';
-      // 兼務でCRにもASにもなれるか
-      const canBeCR=(s)=>getRoles(s).includes('creator');
-      const canBeAS=(s)=>getRoles(s).includes('assistant');
+      const getPrimaryRole=(s,accId)=>{
+        // アカウントごとの役割設定があればそちらを優先
+        const accRole=s.accountRoles?.[accId];
+        if(accRole) return accRole;
+        return s.primaryRole||(getRoles(s)[0])||'assistant';
+      };
+      const isCR=(s)=>getPrimaryRole(s,acc.id)==='creator';
+      const isAS=(s)=>getPrimaryRole(s,acc.id)==='assistant';
+      const canBeCR=(s)=>{
+        const accRole=s.accountRoles?.[acc.id];
+        if(accRole) return accRole==='creator';
+        return getRoles(s).includes('creator');
+      };
+      const canBeAS=(s)=>{
+        const accRole=s.accountRoles?.[acc.id];
+        if(accRole) return accRole==='assistant';
+        return getRoles(s).includes('assistant');
+      };
       const isOff=(sIdx,key)=>{const r=getRequest(sIdx,key);return r==='off'||r?.type==='off';};
       const canWork=(sIdx,dIdx)=>{
         const s=staff[sIdx];
