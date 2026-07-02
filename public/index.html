@@ -719,7 +719,7 @@ function fmt(d){return`${d.getMonth()+1}/${d.getDate()}`;}
 function dayKey(dIdx){return`${weekOffset}_${dIdx}`;}
 function getAcc(id){return accounts.find(a=>a.id===id);}
 function getShift(accId,sIdx,key){return shifts[accId]?.[sIdx]?.[key]??null;}
-function setShift(accId,sIdx,key,type,auto=false){if(!shifts[accId])shifts[accId]={};if(!shifts[accId][sIdx])shifts[accId][sIdx]={};if(type===null){delete shifts[accId][sIdx][key];return;}shifts[accId][sIdx][key]={type,auto};}
+function setShift(accId,sIdx,key,type,auto=false,assignedRole=null){if(!shifts[accId])shifts[accId]={};if(!shifts[accId][sIdx])shifts[accId][sIdx]={};if(type===null){delete shifts[accId][sIdx][key];return;}const obj={type,auto};if(assignedRole) obj.role=assignedRole;shifts[accId][sIdx][key]=obj;}
 
 // カスタムシフト取得ヘルパー
 function getCustomShiftDef(accId, shiftId){
@@ -807,7 +807,21 @@ function buildTable(){
         :`<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:8px;background:#0C1A2E;color:#60A5FA;border:1px solid #1E3A5F${isPrimary&&roles.length>1?';outline:1.5px solid #60A5FA;outline-offset:1px':''}">🎧 AS${isPrimary&&roles.length>1?' ★':''}</span>`;
     }).join('');
     let tr=`<tr><td class="col-staff"><div class="staff-meta"><div class="staff-name-row"><span>${s.name}</span>${roleBadge}<span class="priority-badge ${s.priority}">${PRIORITY_LABELS[s.priority]}</span>${otherAccBadges}</div>${compatHtml?`<div class="compat-icons">${compatHtml}</div>`:''}</div></td>`;
-    days.forEach((d,dIdx)=>{const key=dayKey(dIdx),sh=getShift(currentAccId,sIdx,key),wd=d.getDay(),fixedType=s.fixedDays?.[wd],isFixed=fixedType!==undefined,req=getRequest(sIdx,key),isPatternOff=isRestDay(d,s.workPattern||'all');if(sh&&sh.type!=='off'&&sh.type!=='requested-off')workDays++;const unmet=checkUnmet(sIdx,key);const cellCls=`shift-cell${isFixed?' fixed-cell':''}${req?.type==='work'&&!sh?' has-request':''}${isPatternOff?' pattern-off':''}`;tr+=`<td class="${cellCls}" onclick="${isPatternOff?'':` openShiftModal(${sIdx},'${key}')`}" style="${isPatternOff?'cursor:default;opacity:0.4':''}">`;tr+=isPatternOff?`<div class="shift-badge off" style="font-size:9px">${isHoliday(d)?'祝休':isWeekend(d)?'週末休':'平日休'}</div>`:renderBadge(sh,isFixed,req);if(unmet)tr+=`<div class="unmet-badge">未反映</div>`;tr+=`</td>`;});
+    days.forEach((d,dIdx)=>{
+      const key=dayKey(dIdx),sh=getShift(currentAccId,sIdx,key),wd=d.getDay(),fixedType=s.fixedDays?.[wd],isFixed=fixedType!==undefined,req=getRequest(sIdx,key),isPatternOff=isRestDay(d,s.workPattern||'all');
+      const absent=isAbsent(sIdx,d);
+      if(sh&&sh.type!=='off'&&sh.type!=='requested-off')workDays++;
+      const unmet=checkUnmet(sIdx,key);
+      const cellCls=`shift-cell${isFixed?' fixed-cell':''}${req?.type==='work'&&!sh?' has-request':''}${isPatternOff?' pattern-off':''}`;
+      if(absent){
+        tr+=`<td class="shift-cell" style="background:#1a0a0a;cursor:default"><div style="font-size:8px;color:#4B1515;text-align:center;padding:4px">🚫<br>不在</div></td>`;
+      } else {
+        tr+=`<td class="${cellCls}" onclick="${isPatternOff?'':` openShiftModal(${sIdx},'${key}')`}" style="${isPatternOff?'cursor:default;opacity:0.4':''}">`;
+        tr+=isPatternOff?`<div class="shift-badge off" style="font-size:9px">${isHoliday(d)?'祝休':isWeekend(d)?'週末休':'平日休'}</div>`:renderBadge(sh,isFixed,req);
+        if(unmet)tr+=`<div class="unmet-badge">未反映</div>`;
+        tr+=`</td>`;
+      }
+    });
     tr+=`<td style="font-weight:700;font-size:12px;text-align:center;color:#94A3B8">${workDays}</td></tr>`;
     tbody+=tr;
   });
@@ -850,9 +864,11 @@ function renderBadge(sh,fixed=false,req=null){
   if(!sDef) return`<div class="shift-badge empty">?</div>`;
   const isCustom = !SHIFT_TYPES[sh.type];
   const reqDot=reqType==='work'?`<span style="font-size:7px;color:#6EE7B7">✋</span>`:reqType==='custom'?`<span style="font-size:7px;color:#93C5FD">⏱</span>`:'';
+  // 役割アイコン
+  const roleIcon=sh.role==='creator'?`<span style="font-size:8px;background:#7C3AED;color:white;border-radius:3px;padding:0 3px">CR</span>`:sh.role==='assistant'?`<span style="font-size:8px;background:#0369A1;color:white;border-radius:3px;padding:0 3px">AS</span>`:'';
   const badgeCls = isCustom ? 'custom' : sDef.cls;
   const customStyle = isCustom ? 'background:#1E1B4B;color:#A78BFA;' : '';
-  return`<div class="shift-badge ${badgeCls}${sh.auto?' auto':''}${fixed?' fixed':''}" style="${customStyle}">${fixed?'<span class="fixed-icon">🔒</span>':''}${reqDot}<span>${sDef.label}</span>${sDef.sub&&!fixed?`<span class="badge-label">${sDef.sub}</span>`:''}</div>`;
+  return`<div class="shift-badge ${badgeCls}${sh.auto?' auto':''}${fixed?' fixed':''}" style="${customStyle}">${fixed?'<span class="fixed-icon">🔒</span>':''}${reqDot}${roleIcon}<span>${sDef.label}</span>${sDef.sub&&!fixed?`<span class="badge-label">${sDef.sub}</span>`:''}</div>`;
 }
 function openShiftModal(sIdx,key){
   currentCell={sIdx,key};
@@ -1023,7 +1039,28 @@ function buildStaffCards(){
       </div>
       ${primaryUI}
     </div>`;
-    cards.innerHTML+=`<div class="staff-card"><div class="staff-card-header"><input class="acc-card-name-input" value="${s.name}" onchange="setStaffName(${sIdx},this)" style="font-size:14px;font-weight:700;flex:1;margin-right:8px"><button class="btn-sm btn-danger" onclick="deleteStaff(${sIdx})">削除</button></div><div class="staff-card-body"><div class="field-row"><span class="field-label">🎭 役割</span>${roleUI}</div><div class="field-row"><span class="field-label">🏆 優先度</span><select onchange="setPriority(${sIdx},this.value)"><option value="high" ${s.priority==='high'?'selected':''}>高（優先的に入れる）</option><option value="mid" ${s.priority==='mid'?'selected':''}>中（通常）</option><option value="low" ${s.priority==='low'?'selected':''}>低（余裕があれば）</option></select></div><div class="field-row"><span class="field-label">📅 週稼働日</span><input type="number" min="0" max="7" value="${s.minDays}" style="width:44px" onchange="staff[${sIdx}].minDays=parseInt(this.value)"><span style="font-size:11px;color:#475569">〜</span><input type="number" min="0" max="7" value="${s.maxDays}" style="width:44px" onchange="staff[${sIdx}].maxDays=parseInt(this.value)"><span style="font-size:11px;color:#475569">日</span></div><div><div class="field-label" style="margin-bottom:5px">📡 担当アカウント</div><div class="acc-assign-grid">${accChips}</div></div><div class="fixed-days-section"><div class="field-label" style="margin-bottom:4px">📌 曜日固定</div><div class="fixed-day-grid">${fixedGrid}</div><div style="font-size:9px;color:#334155;margin-top:3px">クリックで 朝→昼→夜→休→解除</div></div><div class="compat-section"><div class="field-label" style="margin-bottom:4px">🤝 相性設定</div><div class="compat-list">${compatHtml||'<span style="font-size:10px;color:#334155">未設定</span>'}</div>${staff.length>1?`<div class="add-compat"><select id="compat-target-${sIdx}"><option value="">スタッフを選ぶ</option>${otherOpts}</select><button class="btn-compat-good" onclick="addCompat(${sIdx},'good')">♥一緒に</button><button class="btn-compat-bad" onclick="addCompat(${sIdx},'bad')">✗別々に</button></div>`:''}</div></div></div>`;
+    const absences=s.absences||[];
+    const absenceList=absences.map((ab,ai)=>
+      `<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:#0F172A;border-radius:5px;margin-bottom:3px">
+        <span style="font-size:10px;color:#F87171">🚫 ${ab.from}〜${ab.to}</span>
+        ${ab.note?`<span style="font-size:9px;color:#475569">${ab.note}</span>`:''}
+        <button onclick="removeAbsence(${sIdx},${ai})" style="margin-left:auto;background:none;border:none;color:#475569;cursor:pointer;font-size:10px">✕</button>
+      </div>`
+    ).join('');
+
+    cards.innerHTML+=`<div class="staff-card"><div class="staff-card-header"><input class="acc-card-name-input" value="${s.name}" onchange="setStaffName(${sIdx},this)" style="font-size:14px;font-weight:700;flex:1;margin-right:8px"><button class="btn-sm btn-danger" onclick="deleteStaff(${sIdx})">削除</button></div><div class="staff-card-body"><div class="field-row"><span class="field-label">🎭 役割</span>${roleUI}</div><div class="field-row"><span class="field-label">🏆 優先度</span><select onchange="setPriority(${sIdx},this.value)"><option value="high" ${s.priority==='high'?'selected':''}>高（優先的に入れる）</option><option value="mid" ${s.priority==='mid'?'selected':''}>中（通常）</option><option value="low" ${s.priority==='low'?'selected':''}>低（余裕があれば）</option></select></div><div class="field-row"><span class="field-label">📅 週稼働日</span><input type="number" min="0" max="7" value="${s.minDays}" style="width:44px" onchange="staff[${sIdx}].minDays=parseInt(this.value)"><span style="font-size:11px;color:#475569">〜</span><input type="number" min="0" max="7" value="${s.maxDays}" style="width:44px" onchange="staff[${sIdx}].maxDays=parseInt(this.value)"><span style="font-size:11px;color:#475569">日</span></div><div><div class="field-label" style="margin-bottom:5px">📡 担当アカウント</div><div class="acc-assign-grid">${accChips}</div></div><div class="fixed-days-section"><div class="field-label" style="margin-bottom:4px">📌 曜日固定</div><div class="fixed-day-grid">${fixedGrid}</div><div style="font-size:9px;color:#334155;margin-top:3px">クリックで 朝→昼→夜→休→解除</div></div>
+    <div style="border-top:1px solid #1E293B;padding-top:8px">
+      <div class="field-label" style="margin-bottom:5px">🚫 不在期間</div>
+      ${absenceList||'<div style="font-size:10px;color:#334155;margin-bottom:5px">設定なし</div>'}
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:4px">
+        <input type="date" id="ab-from-${sIdx}" style="background:#0F172A;border:1px solid #334155;color:#E2E8F0;border-radius:5px;padding:3px 6px;font-size:11px;outline:none">
+        <span style="color:#64748B;font-size:10px">〜</span>
+        <input type="date" id="ab-to-${sIdx}" style="background:#0F172A;border:1px solid #334155;color:#E2E8F0;border-radius:5px;padding:3px 6px;font-size:11px;outline:none">
+        <input type="text" id="ab-note-${sIdx}" placeholder="備考（任意）" maxlength="20" style="background:#0F172A;border:1px solid #334155;color:#E2E8F0;border-radius:5px;padding:3px 6px;font-size:11px;outline:none;width:90px">
+        <button onclick="addAbsence(${sIdx})" style="background:#7C3AED;color:white;border:none;border-radius:5px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">＋追加</button>
+      </div>
+    </div>
+    <div class="compat-section"><div class="field-label" style="margin-bottom:4px">🤝 相性設定</div><div class="compat-list">${compatHtml||'<span style="font-size:10px;color:#334155">未設定</span>'}</div>${staff.length>1?`<div class="add-compat"><select id="compat-target-${sIdx}"><option value="">スタッフを選ぶ</option>${otherOpts}</select><button class="btn-compat-good" onclick="addCompat(${sIdx},'good')">♥一緒に</button><button class="btn-compat-bad" onclick="addCompat(${sIdx},'bad')">✗別々に</button></div>`:''}</div></div></div>`;
   });
 }
 function toggleStaffAcc(sIdx,accId){if(!staff[sIdx].accounts)staff[sIdx].accounts=[];const idx=staff[sIdx].accounts.indexOf(accId);if(idx>=0)staff[sIdx].accounts.splice(idx,1);else staff[sIdx].accounts.push(accId);buildStaffCards();buildTable();}
@@ -1055,6 +1092,27 @@ function setStaffName(sIdx, input){
   }
   staff[sIdx].name=newName;
   buildTable();debouncedSaveStaff();
+}
+function addAbsence(sIdx){
+  const from=document.getElementById(`ab-from-${sIdx}`)?.value;
+  const to=document.getElementById(`ab-to-${sIdx}`)?.value;
+  const note=document.getElementById(`ab-note-${sIdx}`)?.value.trim()||'';
+  if(!from||!to){alert('開始日と終了日を入力してください');return;}
+  if(from>to){alert('終了日は開始日より後にしてください');return;}
+  if(!staff[sIdx].absences) staff[sIdx].absences=[];
+  staff[sIdx].absences.push({from,to,note});
+  saveStaff();buildStaffCards();
+}
+function removeAbsence(sIdx,ai){
+  staff[sIdx].absences?.splice(ai,1);
+  saveStaff();buildStaffCards();
+}
+// 指定日がスタッフの不在期間内かチェック
+function isAbsent(sIdx,date){
+  const s=staff[sIdx];
+  if(!s?.absences?.length) return false;
+  const d=date instanceof Date?`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`:date;
+  return s.absences.some(ab=>d>=ab.from&&d<=ab.to);
 }
 function setPriority(sIdx,val){staff[sIdx].priority=val;buildTable();}
 function cycleDayFixed(sIdx,wd){if(!staff[sIdx].fixedDays)staff[sIdx].fixedDays={};const cycle=[undefined,'morning','noon','night','off'],cur=staff[sIdx].fixedDays[wd],next=cycle[(cycle.indexOf(cur)+1)%cycle.length];if(next===undefined)delete staff[sIdx].fixedDays[wd];else staff[sIdx].fixedDays[wd]=next;buildStaffCards();buildTable();}
@@ -1537,14 +1595,19 @@ function runMonthShift(){
       const useShifts = (acc.shifts?.length ? types.filter(t=>acc.shifts.includes(t)) : types);
       const maxPerSlot = acc.maxPerSlot||2;
 
-      // ヘルパー：役割取得
+      // ヘルパー：役割取得（兼務はprimaryRoleを優先）
       const getRoles=(s)=>s.roles||( s.role?[s.role]:['assistant']);
-      const isCR=(s)=>getRoles(s).includes('creator');
-      const isAS=(s)=>getRoles(s).includes('assistant');
+      const getPrimaryRole=(s)=>s.primaryRole||(getRoles(s)[0])||'assistant';
+      const isCR=(s)=>getPrimaryRole(s)==='creator';
+      const isAS=(s)=>getPrimaryRole(s)==='assistant';
+      // 兼務でCRにもASにもなれるか
+      const canBeCR=(s)=>getRoles(s).includes('creator');
+      const canBeAS=(s)=>getRoles(s).includes('assistant');
       const isOff=(sIdx,key)=>{const r=getRequest(sIdx,key);return r==='off'||r?.type==='off';};
       const canWork=(sIdx,dIdx)=>{
         const s=staff[sIdx];
         const d=days_dates[dIdx];
+        if(isAbsent(sIdx,d)) return false; // 不在期間中は除外
         return !isOff(sIdx,`${wOff}_${dIdx}`)&&!isRestDay(d,s.workPattern||'all');
       };
       const hasReqWork=(sIdx,key)=>{const r=getRequest(sIdx,key);return r?.type==='work'||r?.type==='custom'||r==='work';};
@@ -1600,18 +1663,22 @@ function runMonthShift(){
           // 各役割の候補：希望出勤者優先 → plannedDays → 稼働数少ない順
           const candidates=(role)=>accStaff
             .filter(({s,i})=>{
-              if(role==='creator'&&!isCR(s)) return false;
-              if(role==='assistant'&&!isAS(s)) return false;
+              if(role==='creator'&&!canBeCR(s)) return false;
+              if(role==='assistant'&&!canBeAS(s)) return false;
               if(isOff(i,key)) return false;
               const sh=getShift(acc.id,i,key);
-              if(sh&&sh.type!=='off') return false; // すでに別スロットで入っている
+              if(sh&&sh.type!=='off') return false;
               const crossC=getCrossAccConflicts(i,key,acc.id);
               if(crossC.has(slotType)) return false;
               return true;
             })
             .sort((a,b)=>{
-              const aW=hasReqWork(a.i,key)?0:( plannedDays[a.i]?.has(dIdx)?1:2);
-              const bW=hasReqWork(b.i,key)?0:( plannedDays[b.i]?.has(dIdx)?1:2);
+              // 優先役割が一致するスタッフを先に
+              const aPri=(role==='creator'?isCR(a.s):isAS(a.s))?0:1;
+              const bPri=(role==='creator'?isCR(b.s):isAS(b.s))?0:1;
+              if(aPri!==bPri) return aPri-bPri;
+              const aW=hasReqWork(a.i,key)?0:(plannedDays[a.i]?.has(dIdx)?1:2);
+              const bW=hasReqWork(b.i,key)?0:(plannedDays[b.i]?.has(dIdx)?1:2);
               if(aW!==bW) return aW-bW;
               return (workCount[a.i]||0)-(workCount[b.i]||0);
             });
@@ -1622,7 +1689,7 @@ function runMonthShift(){
             if(crCand.length){
               const{i,s}=crCand[0];
               const type=determineShiftType(i,key,slotType,acc.id);
-              setShift(acc.id,i,key,type,true);
+              setShift(acc.id,i,key,type,true,'creator'); // 役割を保存
               workCount[i]++;
               plannedDays[i]?.add(dIdx);
             }
@@ -1633,7 +1700,7 @@ function runMonthShift(){
             if(asCand.length){
               const{i,s}=asCand[0];
               const type=determineShiftType(i,key,slotType,acc.id);
-              setShift(acc.id,i,key,type,true);
+              setShift(acc.id,i,key,type,true,'assistant'); // 役割を保存
               workCount[i]++;
               plannedDays[i]?.add(dIdx);
             }
