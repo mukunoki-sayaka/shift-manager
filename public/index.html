@@ -1518,7 +1518,7 @@ function runMonthShift(){
         });
         const myMax=Math.round((monthDays[sIdx]?.max||s.maxDays)*daysInMonth/7);
         const remaining=myMax-alreadySet.size;
-        // 希望出勤日（最優先）
+        // 希望出勤日（最優先・上限を超えても必ず入れる）
         const wantWork=validDIdx.filter(d=>{
           const req=getRequest(sIdx,`${wOff}_${d}`);
           return (req?.type==='work'||req?.type==='custom'||req==='work')&&!alreadySet.has(d);
@@ -1526,15 +1526,16 @@ function runMonthShift(){
         // 空き日（ランダムシャッフルで平等に）
         const freeDays=validDIdx.filter(d=>{
           const req=getRequest(sIdx,`${wOff}_${d}`);
-          const isOff=req==='off'||req?.type==='off'; // 希望休は絶対除外
+          const isOff=req==='off'||req?.type==='off';
           return !alreadySet.has(d)&&!wantWork.includes(d)&&
             !isOff&&
             !isRestDay(days_dates[d],s.workPattern||'all')&&
             !(s.fixedDays?.[days_dates[d].getDay()]);
         });
-        // シャッフル（上位固定を防ぐ）
         for(let i=freeDays.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[freeDays[i],freeDays[j]]=[freeDays[j],freeDays[i]];}
-        plannedDays[sIdx]=new Set([...alreadySet,...[...wantWork,...freeDays].slice(0,Math.max(0,remaining))]);
+        // 希望出勤は全部含める、残り枠でfreeDaysを追加
+        const freeSlots=Math.max(0, remaining-wantWork.length);
+        plannedDays[sIdx]=new Set([...alreadySet,...wantWork,...freeDays.slice(0,freeSlots)]);
       });
 
       for(const dIdx of validDIdx){
@@ -1559,6 +1560,7 @@ function runMonthShift(){
           const dayReq=getRequest(i,key);
           const isOff=dayReq==='off'||dayReq?.type==='off';
           if(isOff) continue;
+          const crossConflicts=getCrossAccConflicts(i,key,acc.id);
           const availSlots=useShifts.filter(t=>(slotCount[t]||0)<maxPerSlot&&!crossConflicts.has(t));
           if(!availSlots.length) continue;
           const alreadyWorking=accStaff.filter(({i:wi})=>{const sh=getShift(acc.id,wi,key);return sh&&sh.type!=='off';}).map(({i})=>i);
@@ -1594,7 +1596,17 @@ function runMonthShift(){
   log(`\n🎉 ${yr}年${mo+1}月の生成完了！`);
   log('💾 Supabaseに保存中...');
   buildTable();
-  saveShiftsDB().then(()=>log('✅ 保存完了！')).catch(e=>log('⚠ 保存エラー: '+e.message));
+  saveShiftsDB().then(()=>{
+    log('✅ 保存完了！');
+    log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    log(`🎊 ${yr}年${mo+1}月のシフト生成・保存が完了しました！`);
+    log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    // モーダルを閉じてシフト表に戻る
+    setTimeout(()=>{
+      closeMonthModal();
+      switchMainTab('shift');
+    }, 1500);
+  }).catch(e=>log('⚠ 保存エラー: '+e.message));
 }
 
 // 他アカウントで同一時間帯に入っているかチェック
