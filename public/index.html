@@ -782,7 +782,7 @@ function switchMainTab(tab){
   if(tab==='shift')buildReqPanel();
   if(tab==='users')buildUserCards();
   if(tab==='month-cal'){
-    try{ buildCalendar(); }catch(e){ console.error('buildCalendar error:',e); }
+    try{ switchCalTab('acc'); }catch(e){ console.error('buildCalendar error:',e); }
   }
 }
 function buildAccountTabBar(){
@@ -2162,13 +2162,19 @@ let adminStaffCalYear=new Date().getFullYear(), adminStaffCalMonth=new Date().ge
 
 function switchCalTab(tab){
   const isAcc=tab==='acc';
-  document.getElementById('calContainer').style.display=isAcc?'block':'none';
-  document.getElementById('staffCalContainer').style.display=isAcc?'none':'block';
-  document.getElementById('cal-tab-acc').style.borderBottomColor=isAcc?'#7C3AED':'transparent';
-  document.getElementById('cal-tab-acc').style.color=isAcc?'#F1F5F9':'#64748B';
-  document.getElementById('cal-tab-staff').style.borderBottomColor=isAcc?'transparent':'#7C3AED';
-  document.getElementById('cal-tab-staff').style.color=isAcc?'#64748B':'#F1F5F9';
-  if(!isAcc) initStaffMonthCal();
+  const accEl=document.getElementById('calContainer');
+  const staffEl=document.getElementById('staffCalContainer');
+  if(accEl) accEl.style.display=isAcc?'block':'none';
+  if(staffEl) staffEl.style.display=isAcc?'none':'block';
+  const tabAcc=document.getElementById('cal-tab-acc');
+  const tabStaff=document.getElementById('cal-tab-staff');
+  if(tabAcc){ tabAcc.style.borderBottomColor=isAcc?'#7C3AED':'transparent'; tabAcc.style.color=isAcc?'#F1F5F9':'#64748B'; }
+  if(tabStaff){ tabStaff.style.borderBottomColor=isAcc?'transparent':'#7C3AED'; tabStaff.style.color=isAcc?'#64748B':'#F1F5F9'; }
+  if(isAcc){
+    try{ buildCalendar(); }catch(e){ console.error('buildCalendar error:',e); }
+  } else {
+    try{ initStaffMonthCal(); }catch(e){ console.error('initStaffMonthCal error:',e); }
+  }
 }
 
 function initStaffMonthCal(){
