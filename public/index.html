@@ -496,7 +496,7 @@ td.shift-cell { position: relative; }
   </div>
   <div class="staff-cards" id="staffCards"></div>
 </div>
-<div class="panel" id="panel-month-cal" style="display:none;flex-direction:column">
+<div class="panel" id="panel-month-cal" style="display:none">
   <!-- タブ切替 -->
   <div style="display:flex;gap:0;border-bottom:1px solid #334155;margin-bottom:12px">
     <button id="cal-tab-acc" onclick="switchCalTab('acc')" style="padding:8px 18px;background:transparent;border:none;border-bottom:2px solid #7C3AED;color:#F1F5F9;font-size:12px;font-weight:700;cursor:pointer">📅 アカウント別</button>
@@ -785,7 +785,7 @@ function switchMainTab(tab){
   });
   const target=document.getElementById(`panel-${tab}`);
   if(target){
-    target.style.display=(tab==='month-cal')?'flex':'block';
+    target.style.display='block';
   }
   window.scrollTo(0,0);
   if(tab==='staff') buildStaffCards();
