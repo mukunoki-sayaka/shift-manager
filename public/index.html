@@ -775,15 +775,15 @@ function switchMainTab(tab){
     if(el) el.style.display='none';
   });
   const target=document.getElementById(`panel-${tab}`);
-  if(target) target.style.display=(tab==='month-cal'?'flex':'block');
-  window.scrollTo(0,0);
-  if(tab==='staff')buildStaffCards();
-  if(tab==='accounts') buildAccCards();
-  if(tab==='shift')buildReqPanel();
-  if(tab==='users')buildUserCards();
-  if(tab==='month-cal'){
-    try{ switchCalTab('acc'); }catch(e){ console.error('buildCalendar error:',e); }
+  if(target){
+    target.style.display=(tab==='month-cal')?'flex':'block';
   }
+  window.scrollTo(0,0);
+  if(tab==='staff') buildStaffCards();
+  if(tab==='accounts') buildAccCards();
+  if(tab==='shift') buildReqPanel();
+  if(tab==='users') buildUserCards();
+  if(tab==='month-cal') switchCalTab('acc');
 }
 function buildAccountTabBar(){
   if(!currentAccId||!getAcc(currentAccId))currentAccId=accounts[0]?.id;
@@ -2164,16 +2164,16 @@ function switchCalTab(tab){
   const isAcc=tab==='acc';
   const accEl=document.getElementById('calContainer');
   const staffEl=document.getElementById('staffCalContainer');
-  if(accEl) accEl.style.display=isAcc?'block':'none';
-  if(staffEl) staffEl.style.display=isAcc?'none':'block';
+  if(accEl){ accEl.style.display=isAcc?'block':'none'; }
+  if(staffEl){ staffEl.style.display=isAcc?'none':'block'; }
   const tabAcc=document.getElementById('cal-tab-acc');
   const tabStaff=document.getElementById('cal-tab-staff');
   if(tabAcc){ tabAcc.style.borderBottomColor=isAcc?'#7C3AED':'transparent'; tabAcc.style.color=isAcc?'#F1F5F9':'#64748B'; }
   if(tabStaff){ tabStaff.style.borderBottomColor=isAcc?'transparent':'#7C3AED'; tabStaff.style.color=isAcc?'#64748B':'#F1F5F9'; }
   if(isAcc){
-    setTimeout(()=>{ try{ buildCalendar(); }catch(e){ console.error('buildCalendar error:',e); } },0);
+    buildCalendar();
   } else {
-    setTimeout(()=>{ try{ initStaffMonthCal(); }catch(e){ console.error('initStaffMonthCal error:',e); } },0);
+    initStaffMonthCal();
   }
 }
 
