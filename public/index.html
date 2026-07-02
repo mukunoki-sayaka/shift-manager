@@ -1702,13 +1702,35 @@ function runMonthShift(){
         }
 
         for(const slotType of schedTypes){
-          // すでにCR・ASが埋まっているか確認
-          const inSlot=accStaff.filter(({i})=>{
+          // すでにCR・ASが埋まっているか確認（同じ時間帯のシフトを持つスタッフを確認）
+          const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m;};
+          const getSlotRange=(t)=>{
+            const def=getShiftDef(acc.id,t);
+            if(!def?.sub) return null;
+            const[ss,se]=def.sub.split('〜').map(toMin);
+            return{ss,se};
+          };
+          const slotRange=getSlotRange(slotType);
+          const inSlot=accStaff.filter(({i,s})=>{
             const sh=getShift(acc.id,i,key);
-            return sh&&(sh.type===slotType||(sh.id&&sh.id===slotType));
+            if(!sh||sh.type==='off') return false;
+            // 同じslotTypeか、時間帯が重複しているか確認
+            if(sh.type===slotType) return true;
+            if(!slotRange) return false;
+            const shRange=getSlotRange(sh.type);
+            if(!shRange) return false;
+            const overlap=Math.max(0,Math.min(slotRange.se,shRange.se)-Math.max(slotRange.ss,shRange.ss));
+            return overlap>0;
           });
-          const hasCR=inSlot.some(({s})=>isCR(s));
-          const hasASv=inSlot.some(({s})=>isAS(s));
+          // sh.roleまたはprimaryRoleでCR/ASを判定
+          const hasCR=inSlot.some(({i,s})=>{
+            const sh=getShift(acc.id,i,key);
+            return sh?.role==='creator'||((!sh?.role)&&isCR(s));
+          });
+          const hasASv=inSlot.some(({i,s})=>{
+            const sh=getShift(acc.id,i,key);
+            return sh?.role==='assistant'||((!sh?.role)&&isAS(s));
+          });
           if(hasCR&&hasASv) continue; // 既にCR+AS揃っている
 
           // 各役割の候補：希望出勤者優先 → plannedDays → 稼働数少ない順
@@ -1718,7 +1740,8 @@ function runMonthShift(){
               if(role==='assistant'&&!canBeAS(s)) return false;
               if(isOff(i,key)) return false;
               const sh=getShift(acc.id,i,key);
-              if(sh&&sh.type!=='off') return false;
+              if(sh&&sh.type!=='off') return false; // すでにシフトが入っている
+              if(isAbsent(i,days_dates[dIdx])) return false; // 不在期間
               const crossC=getCrossAccConflicts(i,key,acc.id);
               if(crossC.has(slotType)) return false;
               return true;
