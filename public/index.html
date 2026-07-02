@@ -1804,34 +1804,72 @@ function runMonthShift(){
 
 // 希望申請に基づいてシフト種別を決定するヘルパー
 function determineShiftType(sIdx, key, defaultType, accId){
-  const req=getRequest(sIdx,key);
-  if(!req||req.type==='work'||req==='work') return defaultType;
-  if(req.type!=='custom'||!req.start||!req.end) return defaultType;
   const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m;};
   const fmt2=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+  const req=getRequest(sIdx,key);
+
+  // 希望時間指定がない場合はdefaultTypeをそのまま返す
+  if(!req||req.type==='work'||req==='work') return defaultType;
+  if(req.type!=='custom'||!req.start||!req.end) return defaultType;
+
   const rs=toMin(req.start), re=toMin(req.end);
-  // defaultTypeの枠と重複を確認
-  const def=getShiftDef(accId,defaultType);
-  if(def?.sub){
+  const reqDuration=re-rs;
+
+  // 6時間（360分）を超える場合は6時間に切り詰め
+  const maxDuration=360;
+
+  // 標準シフト候補を重複時間で評価
+  const acc=getAcc(accId);
+  const standardTypes=acc?.shifts?.length?acc.shifts:['morning','noon','night'];
+  const scored=standardTypes.map(t=>{
+    const def=getShiftDef(accId,t);
+    if(!def?.sub) return null;
     const[ss,se]=def.sub.split('〜').map(toMin);
-    const overlap=Math.max(0,Math.min(re,se)-Math.max(rs,ss));
-    if(overlap>0){
-      // 完全収まり
-      if(rs>=ss&&re<=se) return defaultType;
-      // 跨ぎ：特別枠を作成
-      const oStart=Math.max(rs,ss), oEnd=Math.min(re,se);
-      const customId=`custom_${fmt2(oStart)}_${fmt2(oEnd)}`;
-      const acc=getAcc(accId);
-      if(acc){
-        if(!acc.customShifts) acc.customShifts=[];
-        if(!acc.customShifts.find(cs=>cs.id===customId)){
-          acc.customShifts.push({id:customId,label:'希望時間',start:fmt2(oStart),end:fmt2(oEnd)});
-        }
+    const overlapStart=Math.max(rs,ss);
+    const overlapEnd=Math.min(re,se);
+    const overlap=Math.max(0,overlapEnd-overlapStart);
+    if(overlap<=0) return null;
+    const fullyContained=(rs>=ss&&re<=se);
+    const shiftDuration=se-ss;
+    return{t,overlap,fullyContained,ss,se,overlapStart,overlapEnd,shiftDuration};
+  }).filter(Boolean);
+
+  if(!scored.length){
+    // どの標準枠とも重ならない → 希望時間でカスタム枠（6h上限）
+    const actualEnd=Math.min(re,rs+maxDuration);
+    const customId=`custom_${fmt2(rs)}_${fmt2(actualEnd)}`;
+    if(acc){
+      if(!acc.customShifts) acc.customShifts=[];
+      if(!acc.customShifts.find(cs=>cs.id===customId)){
+        acc.customShifts.push({id:customId,label:'希望時間',start:fmt2(rs),end:fmt2(actualEnd)});
       }
-      return customId;
     }
+    return customId;
   }
-  return defaultType;
+
+  // 完全収まりを優先、次に重複時間が最大のものを選ぶ
+  const fullyIn=scored.filter(x=>x.fullyContained);
+  const best=fullyIn.length
+    ? fullyIn.sort((a,b)=>b.overlap-a.overlap)[0]
+    : scored.sort((a,b)=>b.overlap-a.overlap)[0];
+
+  // 選んだ枠の稼働時間が6時間を超えないか確認
+  if(best.shiftDuration<=maxDuration){
+    // 標準枠に収まる → そのまま標準シフトを返す
+    return best.t;
+  } else {
+    // 6時間超 → 希望開始時間から6時間のカスタム枠
+    const customStart=Math.max(rs,best.ss);
+    const customEnd=customStart+maxDuration;
+    const customId=`custom_${fmt2(customStart)}_${fmt2(customEnd)}`;
+    if(acc){
+      if(!acc.customShifts) acc.customShifts=[];
+      if(!acc.customShifts.find(cs=>cs.id===customId)){
+        acc.customShifts.push({id:customId,label:'希望時間',start:fmt2(customStart),end:fmt2(customEnd)});
+      }
+    }
+    return customId;
+  }
 }
 
 // 他アカウントで同一時間帯に入っているかチェック
@@ -2273,11 +2311,12 @@ async function saveUsers(){
 }
 async function saveRequests(){
   try{
-    // 保存中表示
     const el=document.getElementById('reqSaveStatus');
     if(el){ el.textContent='⏳ 保存中...'; el.style.color='#F59E0B'; el.style.background='#1C1A09'; }
+    const dataSize=JSON.stringify(requests).length;
+    console.log('saveRequests: size=', dataSize, 'bytes');
     await sb.set('lc_requests',requests);
-    // 保存完了表示（2秒後に消す）
+    console.log('saveRequests: done');
     if(el){
       el.textContent='✅ 保存済み';
       el.style.color='#6EE7B7';
@@ -2287,7 +2326,7 @@ async function saveRequests(){
   }catch(e){
     console.error('saveRequests error:',e);
     const el=document.getElementById('reqSaveStatus');
-    if(el){ el.textContent='⚠ 保存失敗'; el.style.color='#FCA5A5'; el.style.background='#450A0A'; }
+    if(el){ el.textContent='⚠ 保存失敗: '+e.message; el.style.color='#FCA5A5'; el.style.background='#450A0A'; }
   }
 }
 async function saveStaff(){
