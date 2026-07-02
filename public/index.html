@@ -1566,12 +1566,53 @@ function runMonthShift(){
           const alreadyWorking=accStaff.filter(({i:wi})=>{const sh=getShift(acc.id,wi,key);return sh&&sh.type!=='off';}).map(({i})=>i);
           const hasBad=alreadyWorking.some(w=>(s.compat[w]??staff[w]?.compat[i])==='bad');
           if(hasBad){plannedDays[i].delete(dIdx);continue;}
-          // 希望時間がある場合はそのシフトを優先
-          const req=getRequest(i,key);
+
+          // シフト種別の決定
+          const reqForType=getRequest(i,key);
           let type;
-          if(req?.type==='custom'&&req.start&&req.end){
-            // カスタム希望時間に最も近いシフトを選ぶ
-            type=availSlots[0];
+          if(reqForType?.type==='custom'&&reqForType.start&&reqForType.end){
+            const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m;};
+            const fmt2=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+            const rs=toMin(reqForType.start), re=toMin(reqForType.end);
+
+            // 各スロットの重複を計算
+            const scored=availSlots.map(t=>{
+              const def=getShiftDef(acc.id,t);
+              if(!def?.sub) return null;
+              const[ss,se]=def.sub.split('〜').map(toMin);
+              const overlapStart=Math.max(rs,ss), overlapEnd=Math.min(re,se);
+              const overlap=Math.max(0,overlapEnd-overlapStart);
+              if(overlap<=0) return null;
+              // 完全に枠内に収まるか（希望が枠の中に完全に入っている）
+              const fullyContained=(rs>=ss&&re<=se);
+              return{t,overlap,fullyContained,ss,se,overlapStart,overlapEnd};
+            }).filter(Boolean);
+
+            if(!scored.length){
+              // 重なりなし → ランダム
+              type=availSlots[Math.floor(Math.random()*availSlots.length)];
+            } else {
+              // 完全収まりを優先、なければ重複時間が最大のものを選ぶ
+              const fullyIn=scored.filter(x=>x.fullyContained);
+              const best=fullyIn.length
+                ? fullyIn.sort((a,b)=>b.overlap-a.overlap)[0]
+                : scored.sort((a,b)=>b.overlap-a.overlap)[0];
+
+              type=best.t;
+
+              // 跨ぎの場合は特別枠として時間を保存
+              if(!best.fullyContained){
+                const customId=`custom_${fmt2(best.overlapStart)}_${fmt2(best.overlapEnd)}`;
+                const accObj=getAcc(acc.id);
+                if(accObj){
+                  if(!accObj.customShifts) accObj.customShifts=[];
+                  if(!accObj.customShifts.find(cs=>cs.id===customId)){
+                    accObj.customShifts.push({id:customId,label:'希望時間',start:fmt2(best.overlapStart),end:fmt2(best.overlapEnd)});
+                  }
+                }
+                type=customId;
+              }
+            }
           } else {
             type=availSlots[Math.floor(Math.random()*availSlots.length)];
           }
