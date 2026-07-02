@@ -387,7 +387,10 @@ td.shift-cell { position: relative; }
         </div>
       </div>
 
-      <div style="font-size:11px;color:#64748B;margin-bottom:10px">🙏 希望休 または ✋ 希望出勤 をタップして申請できます。</div>
+      <div style="font-size:11px;color:#64748B;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        🙏 希望休 または ✋ 希望出勤 をタップして申請できます。
+        <span id="reqSaveStatus" style="font-size:10px;padding:2px 8px;border-radius:10px;background:#1E293B;color:#64748B"></span>
+      </div>
       <div class="staff-day-cards" id="staffDayCards"></div>
       <div style="margin-top:14px;padding:10px 12px;background:#1E293B;border-radius:8px;font-size:10px;color:#64748B;border:1px solid #334155">
         ※ 申請内容は管理者がシフト生成時に反映します。確定後の変更は管理者にご連絡ください。
@@ -2142,7 +2145,25 @@ async function saveUsers(){
     console.log('saveUsers: done');
   }catch(e){console.error('saveUsers:',e);}
 }
-async function saveRequests(){try{await sb.set('lc_requests',requests);}catch(e){console.error('saveRequests:',e);}}
+async function saveRequests(){
+  try{
+    // 保存中表示
+    const el=document.getElementById('reqSaveStatus');
+    if(el){ el.textContent='⏳ 保存中...'; el.style.color='#F59E0B'; el.style.background='#1C1A09'; }
+    await sb.set('lc_requests',requests);
+    // 保存完了表示（2秒後に消す）
+    if(el){
+      el.textContent='✅ 保存済み';
+      el.style.color='#6EE7B7';
+      el.style.background='#052e16';
+      setTimeout(()=>{ el.textContent=''; el.style.background='#1E293B'; },2000);
+    }
+  }catch(e){
+    console.error('saveRequests error:',e);
+    const el=document.getElementById('reqSaveStatus');
+    if(el){ el.textContent='⚠ 保存失敗'; el.style.color='#FCA5A5'; el.style.background='#450A0A'; }
+  }
+}
 async function saveStaff(){
   try{
     console.log('saveStaff: saving...');
