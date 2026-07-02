@@ -1461,14 +1461,15 @@ function runMonthShift(){
       const workCount={};
       accStaff.forEach(({i})=>workCount[i]=0);
 
-      // 上書き処理（月内の日のみ）
+      // 上書き処理（月内の日のみ・手動シフトも含めてすべて削除）
       if(overwrite){
         accStaff.forEach(({i:sIdx})=>{
           validDIdx.forEach(dIdx=>{
-            const key=`${wOff}_${dIdx}`, sh=getShift(acc.id,sIdx,key);
-            if(sh?.auto) setShift(acc.id,sIdx,key,null);
+            const key=`${wOff}_${dIdx}`;
+            setShift(acc.id,sIdx,key,null); // auto/手動問わずすべて削除
           });
         });
+        workCount && accStaff.forEach(({i})=>{ workCount[i]=0; }); // カウントリセット
       } else {
         accStaff.forEach(({i:sIdx})=>{
           validDIdx.forEach(dIdx=>{
