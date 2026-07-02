@@ -1654,28 +1654,31 @@ function runMonthShift(){
       };
       const hasReqWork=(sIdx,key)=>{const r=getRequest(sIdx,key);return r?.type==='work'||r?.type==='custom'||r==='work';};
 
-      // 配信スケジュールから今月の各日のシフト種別を取得
+      // 配信スケジュールから今月の各日のシフト種別を取得（なければ空配列=お休み）
       const getSchedShiftTypes=(dIdx)=>{
         const d=days_dates[dIdx];
         const monthKey=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
         const sched=acc.schedule?.[monthKey]?.[d.getDate()];
-        if(!sched) return [];
-        if(sched.type==='all'&&sched.shifts) return sched.shifts.map(s=>s.type).filter(t=>useShifts.includes(t));
-        if(useShifts.includes(sched.type)) return [sched.type];
-        return useShifts.slice(0,1); // フォールバック
+        if(!sched) return []; // 配信スケジュールなし → お休み
+        if(sched.type==='all'&&sched.shifts) return sched.shifts.map(s=>s.type).filter(t=>useShifts.includes(t)||t.startsWith('cs_')||t.startsWith('custom_'));
+        if(useShifts.includes(sched.type)||sched.type.startsWith('cs_')||sched.type.startsWith('custom_')) return [sched.type];
+        return []; // スケジュールはあるが該当シフト種別なし → お休み
       };
 
-      // plannedDays：希望出勤日は必ず、それ以外は稼働上限まで
+      // 配信がある日のみを稼働候補日にする
+      const schedDays=validDIdx.filter(dIdx=>getSchedShiftTypes(dIdx).length>0);
+
+      // plannedDays：希望出勤日は必ず、それ以外は稼働上限まで（配信がある日のみ）
       const plannedDays={};
       accStaff.forEach(({s,i:sIdx})=>{
         const alreadySet=new Set();
-        validDIdx.forEach(d=>{
+        schedDays.forEach(d=>{
           const sh=getShift(acc.id,sIdx,`${wOff}_${d}`);
           if(sh&&sh.type!=='off') alreadySet.add(d);
         });
-        const myMax=Math.round((monthDays[sIdx]?.max||s.maxDays)*daysInMonth/7);
-        const wantWork=validDIdx.filter(d=>hasReqWork(sIdx,`${wOff}_${d}`)&&!alreadySet.has(d)&&canWork(sIdx,d));
-        const freeDays=validDIdx.filter(d=>
+        const myMax=Math.round((monthDays[sIdx]?.max||s.maxDays)*schedDays.length/7);
+        const wantWork=schedDays.filter(d=>hasReqWork(sIdx,`${wOff}_${d}`)&&!alreadySet.has(d)&&canWork(sIdx,d));
+        const freeDays=schedDays.filter(d=>
           !alreadySet.has(d)&&!wantWork.includes(d)&&canWork(sIdx,d)&&
           !(s.fixedDays?.[days_dates[d].getDay()])
         );
