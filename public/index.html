@@ -2274,7 +2274,12 @@ function calSelectAcc(id){ calAccId=id; buildCalendar(); }
 function buildCalendar(){
   const container=document.getElementById('calContainer');
   if(!container){ console.error('calContainer not found'); return; }
-  if(!calAccId||!getAcc(calAccId)) calAccId=accounts[0]?.id;
+  try{
+    if(!accounts||!accounts.length){
+      container.innerHTML='<div style="padding:20px;color:#64748B">アカウントデータを読み込み中...ページを再読み込みしてください。</div>';
+      return;
+    }
+    if(!calAccId||!getAcc(calAccId)) calAccId=accounts[0]?.id;
   const acc=getAcc(calAccId);
 
   const accTabsHtml=accounts.map(a=>
@@ -2361,6 +2366,10 @@ function buildCalendar(){
 
   container.appendChild(headerDiv);
   container.appendChild(tableDiv);
+  }catch(err){
+    console.error('buildCalendar error:',err);
+    container.innerHTML=`<div style="padding:20px;color:#FCA5A5;background:#450A0A;border-radius:8px">⚠ カレンダー表示エラー: ${err.message}</div>`;
+  }
 }
 
 // users: [{id, password, role:'admin'|'staff', staffIdx:number|null}]
