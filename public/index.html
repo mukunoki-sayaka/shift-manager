@@ -1482,7 +1482,9 @@ function runMonthShift(){
       accStaff.forEach(({s,i:sIdx})=>{
         validDIdx.forEach(dIdx=>{
           const key=`${wOff}_${dIdx}`;
-          if(getRequest(sIdx,key)==='off'&&!getShift(acc.id,sIdx,key)){
+          const req=getRequest(sIdx,key);
+          const isOff=req==='off'||req?.type==='off';
+          if(isOff&&!getShift(acc.id,sIdx,key)){
             setShift(acc.id,sIdx,key,'off',true);
           }
         });
@@ -1492,7 +1494,10 @@ function runMonthShift(){
             const d=days_dates[dIdx];
             if(d.getDay()!==wd)return;
             const key=`${wOff}_${dIdx}`;
-            if(getRequest(sIdx,key))return;
+            const req=getRequest(sIdx,key);
+            const isOff=req==='off'||req?.type==='off';
+            if(isOff) return; // 希望休があれば固定曜日も無視
+            if(req) return;
             setShift(acc.id,sIdx,key,ft,true);
             if(ft!=='off') workCount[sIdx]++;
           });
@@ -1502,7 +1507,7 @@ function runMonthShift(){
       const useShifts = (acc.shifts?.length ? types.filter(t=>acc.shifts.includes(t)) : types);
       const maxPerSlot = acc.maxPerSlot||2;
 
-      // 週全体バランス分散（月内の日のみ）
+      // 週全体バランス分散（月内の日のみ・平等割り当て）
       const plannedDays={};
       accStaff.forEach(({s,i:sIdx})=>{
         const alreadySet=new Set();
@@ -1512,13 +1517,21 @@ function runMonthShift(){
         });
         const myMax=Math.round((monthDays[sIdx]?.max||s.maxDays)*daysInMonth/7);
         const remaining=myMax-alreadySet.size;
-        const wantWork=validDIdx.filter(d=>getRequest(sIdx,`${wOff}_${d}`)==='work'&&!alreadySet.has(d));
-        const freeDays=validDIdx.filter(d=>
-          !alreadySet.has(d)&&!wantWork.includes(d)&&
-          getRequest(sIdx,`${wOff}_${d}`)!=='off'&&
-          !isRestDay(days_dates[d],s.workPattern||'all')&&
-          !(s.fixedDays?.[days_dates[d].getDay()])
-        );
+        // 希望出勤日（最優先）
+        const wantWork=validDIdx.filter(d=>{
+          const req=getRequest(sIdx,`${wOff}_${d}`);
+          return (req?.type==='work'||req?.type==='custom'||req==='work')&&!alreadySet.has(d);
+        });
+        // 空き日（ランダムシャッフルで平等に）
+        const freeDays=validDIdx.filter(d=>{
+          const req=getRequest(sIdx,`${wOff}_${d}`);
+          const isOff=req==='off'||req?.type==='off'; // 希望休は絶対除外
+          return !alreadySet.has(d)&&!wantWork.includes(d)&&
+            !isOff&&
+            !isRestDay(days_dates[d],s.workPattern||'all')&&
+            !(s.fixedDays?.[days_dates[d].getDay()]);
+        });
+        // シャッフル（上位固定を防ぐ）
         for(let i=freeDays.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[freeDays[i],freeDays[j]]=[freeDays[j],freeDays[i]];}
         plannedDays[sIdx]=new Set([...alreadySet,...[...wantWork,...freeDays].slice(0,Math.max(0,remaining))]);
       });
@@ -1527,16 +1540,38 @@ function runMonthShift(){
         const key=`${wOff}_${dIdx}`;
         const slotCount={morning:0,noon:0,night:0};
         accStaff.forEach(({i})=>{const sh=getShift(acc.id,i,key);if(sh&&slotCount[sh.type]!==undefined)slotCount[sh.type]++;});
-        const todayStaff=accStaff.filter(({i})=>plannedDays[i]?.has(dIdx)&&!getShift(acc.id,i,key))
-          .sort((a,b)=>order[a.s.priority]-order[b.s.priority]);
+
+        // 希望出勤者を先に、次に稼働数が少ない順でソート（平等化）
+        const todayStaff=accStaff
+          .filter(({i})=>plannedDays[i]?.has(dIdx)&&!getShift(acc.id,i,key))
+          .sort((a,b)=>{
+            const aReq=getRequest(a.i,key);
+            const bReq=getRequest(b.i,key);
+            const aWant=(aReq?.type==='work'||aReq?.type==='custom'||aReq==='work')?0:1;
+            const bWant=(bReq?.type==='work'||bReq?.type==='custom'||bReq==='work')?0:1;
+            if(aWant!==bWant) return aWant-bWant; // 希望出勤優先
+            return (workCount[a.i]||0)-(workCount[b.i]||0); // 稼働数少ない順
+          });
+
         for(const{i,s}of todayStaff){
-          const crossConflicts=getCrossAccConflicts(i,key,acc.id);
+          // 希望休は絶対スキップ
+          const dayReq=getRequest(i,key);
+          const isOff=dayReq==='off'||dayReq?.type==='off';
+          if(isOff) continue;
           const availSlots=useShifts.filter(t=>(slotCount[t]||0)<maxPerSlot&&!crossConflicts.has(t));
           if(!availSlots.length) continue;
           const alreadyWorking=accStaff.filter(({i:wi})=>{const sh=getShift(acc.id,wi,key);return sh&&sh.type!=='off';}).map(({i})=>i);
           const hasBad=alreadyWorking.some(w=>(s.compat[w]??staff[w]?.compat[i])==='bad');
           if(hasBad){plannedDays[i].delete(dIdx);continue;}
-          const type=availSlots[Math.floor(Math.random()*availSlots.length)];
+          // 希望時間がある場合はそのシフトを優先
+          const req=getRequest(i,key);
+          let type;
+          if(req?.type==='custom'&&req.start&&req.end){
+            // カスタム希望時間に最も近いシフトを選ぶ
+            type=availSlots[0];
+          } else {
+            type=availSlots[Math.floor(Math.random()*availSlots.length)];
+          }
           setShift(acc.id,i,key,type,true);
           slotCount[type]=(slotCount[type]||0)+1;
           workCount[i]++;
@@ -2073,17 +2108,29 @@ function copyLastWeek(){
   const sIdx=parseInt(currentUser.staffIdx);
   if(isNaN(sIdx)) return;
   const prevOffset=staffWeekOffset-1;
+  const {yr:nextYr, mo:nextMo}=getNextMonthWeekRange();
+  const thisDays=getWeekDates(staffWeekOffset);
   let copied=0;
   for(let d=0;d<7;d++){
+    // 翌月範囲外の日はスキップ
+    const thisDate=thisDays[d];
+    if(!thisDate||thisDate.getFullYear()!==nextYr||thisDate.getMonth()!==nextMo) continue;
     const prevKey=`${prevOffset}_${d}`;
     const thisKey=`${staffWeekOffset}_${d}`;
     const prevReq=getRequest(sIdx, prevKey);
-    setRequest(sIdx, thisKey, prevReq||null);
-    if(prevReq) copied++;
+    // prevReqをディープコピーして設定（オブジェクト参照を避ける）
+    if(prevReq){
+      const copied_req = typeof prevReq==='object' ? {...prevReq} : prevReq;
+      setRequest(sIdx, thisKey, copied_req);
+      copied++;
+    } else {
+      setRequest(sIdx, thisKey, null);
+    }
   }
   saveRequests();
   buildStaffView();
   if(copied===0) alert('先週の希望申請がありませんでした。');
+  else alert(`${copied}日分の希望申請をコピーしました。`);
 }
 
 function clearThisWeek(){
