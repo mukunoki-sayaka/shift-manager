@@ -441,7 +441,7 @@ td.shift-cell { position: relative; }
   <div class="main-tab" onclick="switchMainTab('accounts')" style="display:inline-block;white-space:nowrap">アカウント設定</div>
   <div class="main-tab" onclick="switchMainTab('users')" style="display:inline-block;white-space:nowrap">👤 ユーザー管理</div>
 </div>
-<div class="panel" id="panel-shift" style="display:none">
+<div class="panel" id="panel-shift" style="display:none;overflow-x:hidden">
   <div class="account-tab-bar" id="accountTabBar"></div>
   <div class="controls-row">
     <div class="input-group">
@@ -485,7 +485,7 @@ td.shift-cell { position: relative; }
       <div class="unmet-list-title">⚠ 未反映の希望（全期間） <span id="unmetCountBadge"></span></div>
       <div id="unmetList"></div>
     </div>
-  </div><table><thead id="tableHead"></thead><tbody id="tableBody"></tbody><tfoot id="tableFoot"></tfoot></table></div>
+  </div><div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="width:100%;border-collapse:collapse;min-width:600px"><thead id="tableHead"></thead><tbody id="tableBody"></tbody><tfoot id="tableFoot"></tfoot></table></div></div>
 </div>
 <div class="panel" id="panel-staff" style="display:none">
   <div class="controls-row">
@@ -870,13 +870,13 @@ function renderBadge(sh,fixed=false,req=null,sIdx=-1){
   }
   let roleTag='';
   if(displayRole==='creator'){
-    roleTag=`<span style="display:block;font-size:9px;font-weight:800;background:#4C1D95;color:#DDD6FE;border-radius:3px;padding:0 4px;margin-bottom:1px;text-align:center">🎬 CR</span>`;
+    roleTag=`<span style="font-size:8px;font-weight:800;background:#4C1D95;color:#DDD6FE;border-radius:3px;padding:0 3px;margin-right:2px">CR</span>`;
   } else if(displayRole==='assistant'){
-    roleTag=`<span style="display:block;font-size:9px;font-weight:800;background:#0C4A6E;color:#BAE6FD;border-radius:3px;padding:0 4px;margin-bottom:1px;text-align:center">🎧 AS</span>`;
+    roleTag=`<span style="font-size:8px;font-weight:800;background:#0C4A6E;color:#BAE6FD;border-radius:3px;padding:0 3px;margin-right:2px">AS</span>`;
   }
   const badgeCls = isCustom ? 'custom' : sDef.cls;
   const customStyle = isCustom ? 'background:#1E1B4B;color:#A78BFA;' : '';
-  return`<div class="shift-badge ${badgeCls}${sh.auto?' auto':''}${fixed?' fixed':''}" style="${customStyle};display:flex;flex-direction:column;align-items:center;gap:1px;padding:3px 4px">${fixed?'<span class="fixed-icon">🔒</span>':''}${roleTag}${reqDot}<span>${sDef.label}</span>${sDef.sub&&!fixed?`<span class="badge-label">${sDef.sub}</span>`:''}</div>`;
+  return`<div class="shift-badge ${badgeCls}${sh.auto?' auto':''}${fixed?' fixed':''}" style="${customStyle}">${fixed?'<span class="fixed-icon">🔒</span>':''}${roleTag}${reqDot}<span>${sDef.label}</span>${sDef.sub&&!fixed?`<span class="badge-label">${sDef.sub}</span>`:''}</div>`;
 }
 function openShiftModal(sIdx,key){
   currentCell={sIdx,key};
