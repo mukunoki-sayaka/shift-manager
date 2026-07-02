@@ -775,7 +775,7 @@ function switchMainTab(tab){
     if(el) el.style.display='none';
   });
   const target=document.getElementById(`panel-${tab}`);
-  if(target) target.style.display='block';
+  if(target) target.style.display=(tab==='month-cal'?'flex':'block');
   window.scrollTo(0,0);
   if(tab==='staff')buildStaffCards();
   if(tab==='accounts') buildAccCards();
@@ -2171,9 +2171,9 @@ function switchCalTab(tab){
   if(tabAcc){ tabAcc.style.borderBottomColor=isAcc?'#7C3AED':'transparent'; tabAcc.style.color=isAcc?'#F1F5F9':'#64748B'; }
   if(tabStaff){ tabStaff.style.borderBottomColor=isAcc?'transparent':'#7C3AED'; tabStaff.style.color=isAcc?'#64748B':'#F1F5F9'; }
   if(isAcc){
-    try{ buildCalendar(); }catch(e){ console.error('buildCalendar error:',e); }
+    setTimeout(()=>{ try{ buildCalendar(); }catch(e){ console.error('buildCalendar error:',e); } },0);
   } else {
-    try{ initStaffMonthCal(); }catch(e){ console.error('initStaffMonthCal error:',e); }
+    setTimeout(()=>{ try{ initStaffMonthCal(); }catch(e){ console.error('initStaffMonthCal error:',e); } },0);
   }
 }
 
