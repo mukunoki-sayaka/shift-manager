@@ -1537,146 +1537,117 @@ function runMonthShift(){
       const useShifts = (acc.shifts?.length ? types.filter(t=>acc.shifts.includes(t)) : types);
       const maxPerSlot = acc.maxPerSlot||2;
 
-      // 週全体バランス分散（月内の日のみ・平等割り当て）
+      // ヘルパー：役割取得
+      const getRoles=(s)=>s.roles||( s.role?[s.role]:['assistant']);
+      const isCR=(s)=>getRoles(s).includes('creator');
+      const isAS=(s)=>getRoles(s).includes('assistant');
+      const isOff=(sIdx,key)=>{const r=getRequest(sIdx,key);return r==='off'||r?.type==='off';};
+      const canWork=(sIdx,dIdx)=>{
+        const s=staff[sIdx];
+        const d=days_dates[dIdx];
+        return !isOff(sIdx,`${wOff}_${dIdx}`)&&!isRestDay(d,s.workPattern||'all');
+      };
+      const hasReqWork=(sIdx,key)=>{const r=getRequest(sIdx,key);return r?.type==='work'||r?.type==='custom'||r==='work';};
+
+      // 配信スケジュールから今月の各日のシフト種別を取得
+      const getSchedShiftTypes=(dIdx)=>{
+        const d=days_dates[dIdx];
+        const monthKey=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        const sched=acc.schedule?.[monthKey]?.[d.getDate()];
+        if(!sched) return [];
+        if(sched.type==='all'&&sched.shifts) return sched.shifts.map(s=>s.type).filter(t=>useShifts.includes(t));
+        if(useShifts.includes(sched.type)) return [sched.type];
+        return useShifts.slice(0,1); // フォールバック
+      };
+
+      // plannedDays：希望出勤日は必ず、それ以外は稼働上限まで
       const plannedDays={};
       accStaff.forEach(({s,i:sIdx})=>{
         const alreadySet=new Set();
         validDIdx.forEach(d=>{
           const sh=getShift(acc.id,sIdx,`${wOff}_${d}`);
-          if(sh&&sh.type!=='off'&&getRequest(sIdx,`${wOff}_${d}`)!=='off') alreadySet.add(d);
+          if(sh&&sh.type!=='off') alreadySet.add(d);
         });
         const myMax=Math.round((monthDays[sIdx]?.max||s.maxDays)*daysInMonth/7);
-        const remaining=myMax-alreadySet.size;
-        // 希望出勤日（最優先・上限を超えても必ず入れる）
-        const wantWork=validDIdx.filter(d=>{
-          const req=getRequest(sIdx,`${wOff}_${d}`);
-          return (req?.type==='work'||req?.type==='custom'||req==='work')&&!alreadySet.has(d);
-        });
-        // 空き日（ランダムシャッフルで平等に）
-        const freeDays=validDIdx.filter(d=>{
-          const req=getRequest(sIdx,`${wOff}_${d}`);
-          const isOff=req==='off'||req?.type==='off';
-          return !alreadySet.has(d)&&!wantWork.includes(d)&&
-            !isOff&&
-            !isRestDay(days_dates[d],s.workPattern||'all')&&
-            !(s.fixedDays?.[days_dates[d].getDay()]);
-        });
+        const wantWork=validDIdx.filter(d=>hasReqWork(sIdx,`${wOff}_${d}`)&&!alreadySet.has(d)&&canWork(sIdx,d));
+        const freeDays=validDIdx.filter(d=>
+          !alreadySet.has(d)&&!wantWork.includes(d)&&canWork(sIdx,d)&&
+          !(s.fixedDays?.[days_dates[d].getDay()])
+        );
         for(let i=freeDays.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[freeDays[i],freeDays[j]]=[freeDays[j],freeDays[i]];}
-        // 希望出勤は全部含める、残り枠でfreeDaysを追加
-        const freeSlots=Math.max(0, remaining-wantWork.length);
+        const freeSlots=Math.max(0,myMax-alreadySet.size-wantWork.length);
         plannedDays[sIdx]=new Set([...alreadySet,...wantWork,...freeDays.slice(0,freeSlots)]);
       });
 
+      // 各日・各時間帯にCR+ASを1セット割り当て
       for(const dIdx of validDIdx){
         const key=`${wOff}_${dIdx}`;
-        const slotCount={morning:0,noon:0,night:0};
-        accStaff.forEach(({i})=>{const sh=getShift(acc.id,i,key);if(sh&&slotCount[sh.type]!==undefined)slotCount[sh.type]++;});
+        // この日の配信時間帯（スケジュールから）
+        const schedTypes=getSchedShiftTypes(dIdx);
+        // 配信がない日は通常割り当て
+        const targetSlots=schedTypes.length?schedTypes:useShifts;
 
-        // 希望出勤者を先に、次に稼働数が少ない順でソート（平等化）
-        const todayStaff=accStaff
-          .filter(({i})=>plannedDays[i]?.has(dIdx)&&!getShift(acc.id,i,key))
-          .sort((a,b)=>{
-            const aReq=getRequest(a.i,key);
-            const bReq=getRequest(b.i,key);
-            const aWant=(aReq?.type==='work'||aReq?.type==='custom'||aReq==='work')?0:1;
-            const bWant=(bReq?.type==='work'||bReq?.type==='custom'||bReq==='work')?0:1;
-            if(aWant!==bWant) return aWant-bWant; // 希望出勤優先
-            return (workCount[a.i]||0)-(workCount[b.i]||0); // 稼働数少ない順
+        for(const slotType of targetSlots){
+          // すでにCR・ASが埋まっているか確認
+          const inSlot=accStaff.filter(({i})=>{
+            const sh=getShift(acc.id,i,key);
+            return sh&&(sh.type===slotType||(sh.id&&sh.id===slotType));
           });
+          const hasCR=inSlot.some(({s})=>isCR(s));
+          const hasASv=inSlot.some(({s})=>isAS(s));
+          if(hasCR&&hasASv) continue; // 既にCR+AS揃っている
 
-        for(const{i,s}of todayStaff){
-          // 希望休は絶対スキップ
-          const dayReq=getRequest(i,key);
-          const isOff=dayReq==='off'||dayReq?.type==='off';
-          if(isOff) continue;
-          const crossConflicts=getCrossAccConflicts(i,key,acc.id);
-          const timeConflicts=getRequestTimeConflicts(i,key,acc.id);
-          const allConflicts=new Set([...crossConflicts,...timeConflicts]);
-
-          // 時間指定申請がある場合はカスタム枠も候補に追加
-          const reqForSlot=getRequest(i,key);
-          let candidateSlots=[...useShifts];
-          if(reqForSlot?.type==='custom'&&reqForSlot.start&&reqForSlot.end){
-            const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m;};
-            const fmt2=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
-            const rs=toMin(reqForSlot.start), re=toMin(reqForSlot.end);
-            // 希望時間がどの標準枠にも完全に収まらない場合、カスタム枠を作って追加
-            const fullyInAny=useShifts.some(t=>{
-              const def=getShiftDef(acc.id,t);
-              if(!def?.sub) return false;
-              const[ss,se]=def.sub.split('〜').map(toMin);
-              return rs>=ss&&re<=se;
+          // 各役割の候補：希望出勤者優先 → plannedDays → 稼働数少ない順
+          const candidates=(role)=>accStaff
+            .filter(({s,i})=>{
+              if(role==='creator'&&!isCR(s)) return false;
+              if(role==='assistant'&&!isAS(s)) return false;
+              if(isOff(i,key)) return false;
+              const sh=getShift(acc.id,i,key);
+              if(sh&&sh.type!=='off') return false; // すでに別スロットで入っている
+              const crossC=getCrossAccConflicts(i,key,acc.id);
+              if(crossC.has(slotType)) return false;
+              return true;
+            })
+            .sort((a,b)=>{
+              const aW=hasReqWork(a.i,key)?0:( plannedDays[a.i]?.has(dIdx)?1:2);
+              const bW=hasReqWork(b.i,key)?0:( plannedDays[b.i]?.has(dIdx)?1:2);
+              if(aW!==bW) return aW-bW;
+              return (workCount[a.i]||0)-(workCount[b.i]||0);
             });
-            if(!fullyInAny){
-              const customId=`custom_${fmt2(rs)}_${fmt2(re)}`;
-              const accObj=getAcc(acc.id);
-              if(accObj){
-                if(!accObj.customShifts) accObj.customShifts=[];
-                if(!accObj.customShifts.find(cs=>cs.id===customId)){
-                  accObj.customShifts.push({id:customId,label:'希望時間',start:fmt2(rs),end:fmt2(re)});
-                }
-              }
-              candidateSlots=[customId,...candidateSlots];
+
+          // CR未充足なら補充
+          if(!hasCR){
+            const crCand=candidates('creator');
+            if(crCand.length){
+              const{i,s}=crCand[0];
+              const type=determineShiftType(i,key,slotType,acc.id);
+              setShift(acc.id,i,key,type,true);
+              workCount[i]++;
+              plannedDays[i]?.add(dIdx);
             }
           }
-          const availSlots=candidateSlots.filter(t=>(slotCount[t]||0)<maxPerSlot&&!allConflicts.has(t));
-          if(!availSlots.length) continue;
-          const alreadyWorking=accStaff.filter(({i:wi})=>{const sh=getShift(acc.id,wi,key);return sh&&sh.type!=='off';}).map(({i})=>i);
-          const hasBad=alreadyWorking.some(w=>(s.compat[w]??staff[w]?.compat[i])==='bad');
-          if(hasBad){plannedDays[i].delete(dIdx);continue;}
-
-          // シフト種別の決定
-          const reqForType=getRequest(i,key);
-          let type;
-          if(reqForType?.type==='custom'&&reqForType.start&&reqForType.end){
-            const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m;};
-            const fmt2=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
-            const rs=toMin(reqForType.start), re=toMin(reqForType.end);
-
-            // 各スロットの重複を計算
-            const scored=availSlots.map(t=>{
-              const def=getShiftDef(acc.id,t);
-              if(!def?.sub) return null;
-              const[ss,se]=def.sub.split('〜').map(toMin);
-              const overlapStart=Math.max(rs,ss), overlapEnd=Math.min(re,se);
-              const overlap=Math.max(0,overlapEnd-overlapStart);
-              if(overlap<=0) return null;
-              // 完全に枠内に収まるか（希望が枠の中に完全に入っている）
-              const fullyContained=(rs>=ss&&re<=se);
-              return{t,overlap,fullyContained,ss,se,overlapStart,overlapEnd};
-            }).filter(Boolean);
-
-            if(!scored.length){
-              // 重なりなし → ランダム
-              type=availSlots[Math.floor(Math.random()*availSlots.length)];
-            } else {
-              // 完全収まりを優先、なければ重複時間が最大のものを選ぶ
-              const fullyIn=scored.filter(x=>x.fullyContained);
-              const best=fullyIn.length
-                ? fullyIn.sort((a,b)=>b.overlap-a.overlap)[0]
-                : scored.sort((a,b)=>b.overlap-a.overlap)[0];
-
-              type=best.t;
-
-              // 跨ぎの場合は特別枠として時間を保存
-              if(!best.fullyContained){
-                const customId=`custom_${fmt2(best.overlapStart)}_${fmt2(best.overlapEnd)}`;
-                const accObj=getAcc(acc.id);
-                if(accObj){
-                  if(!accObj.customShifts) accObj.customShifts=[];
-                  if(!accObj.customShifts.find(cs=>cs.id===customId)){
-                    accObj.customShifts.push({id:customId,label:'希望時間',start:fmt2(best.overlapStart),end:fmt2(best.overlapEnd)});
-                  }
-                }
-                type=customId;
-              }
+          // AS未充足なら補充
+          if(!hasASv){
+            const asCand=candidates('assistant');
+            if(asCand.length){
+              const{i,s}=asCand[0];
+              const type=determineShiftType(i,key,slotType,acc.id);
+              setShift(acc.id,i,key,type,true);
+              workCount[i]++;
+              plannedDays[i]?.add(dIdx);
             }
-          } else {
-            type=availSlots[Math.floor(Math.random()*availSlots.length)];
           }
-          setShift(acc.id,i,key,type,true);
-          slotCount[type]=(slotCount[type]||0)+1;
-          workCount[i]++;
+        }
+
+        // 配信スケジュールがない日はそのアカウントはお休み → 割り当てしない
+        if(!schedTypes.length){
+          if(monthShiftTypes.has('off')){
+            accStaff.forEach(({i:sIdx})=>{
+              if(!getShift(acc.id,sIdx,key)) setShift(acc.id,sIdx,key,'off',true);
+            });
+          }
+          continue;
         }
       }
 
@@ -1706,6 +1677,38 @@ function runMonthShift(){
       switchMainTab('shift');
     }, 1500);
   }).catch(e=>log('⚠ 保存エラー: '+e.message));
+}
+
+// 希望申請に基づいてシフト種別を決定するヘルパー
+function determineShiftType(sIdx, key, defaultType, accId){
+  const req=getRequest(sIdx,key);
+  if(!req||req.type==='work'||req==='work') return defaultType;
+  if(req.type!=='custom'||!req.start||!req.end) return defaultType;
+  const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m;};
+  const fmt2=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+  const rs=toMin(req.start), re=toMin(req.end);
+  // defaultTypeの枠と重複を確認
+  const def=getShiftDef(accId,defaultType);
+  if(def?.sub){
+    const[ss,se]=def.sub.split('〜').map(toMin);
+    const overlap=Math.max(0,Math.min(re,se)-Math.max(rs,ss));
+    if(overlap>0){
+      // 完全収まり
+      if(rs>=ss&&re<=se) return defaultType;
+      // 跨ぎ：特別枠を作成
+      const oStart=Math.max(rs,ss), oEnd=Math.min(re,se);
+      const customId=`custom_${fmt2(oStart)}_${fmt2(oEnd)}`;
+      const acc=getAcc(accId);
+      if(acc){
+        if(!acc.customShifts) acc.customShifts=[];
+        if(!acc.customShifts.find(cs=>cs.id===customId)){
+          acc.customShifts.push({id:customId,label:'希望時間',start:fmt2(oStart),end:fmt2(oEnd)});
+        }
+      }
+      return customId;
+    }
+  }
+  return defaultType;
 }
 
 // 他アカウントで同一時間帯に入っているかチェック
@@ -2319,7 +2322,7 @@ function applyBulkRequest(type){
   buildTemplateList();
 }
 
-function copyLastWeek(){
+async function copyLastWeek(){
   if(!currentUser) return;
   const sIdx=parseInt(currentUser.staffIdx);
   if(isNaN(sIdx)) return;
@@ -2328,13 +2331,11 @@ function copyLastWeek(){
   const thisDays=getWeekDates(staffWeekOffset);
   let copied=0;
   for(let d=0;d<7;d++){
-    // 翌月範囲外の日はスキップ
     const thisDate=thisDays[d];
     if(!thisDate||thisDate.getFullYear()!==nextYr||thisDate.getMonth()!==nextMo) continue;
     const prevKey=`${prevOffset}_${d}`;
     const thisKey=`${staffWeekOffset}_${d}`;
     const prevReq=getRequest(sIdx, prevKey);
-    // prevReqをディープコピーして設定（オブジェクト参照を避ける）
     if(prevReq){
       const copied_req = typeof prevReq==='object' ? {...prevReq} : prevReq;
       setRequest(sIdx, thisKey, copied_req);
@@ -2343,8 +2344,8 @@ function copyLastWeek(){
       setRequest(sIdx, thisKey, null);
     }
   }
-  saveRequests();
-  buildStaffView();
+  buildStaffView(); // 先に画面を更新
+  await saveRequests(); // インジケーター付きで保存
   if(copied===0) alert('先週の希望申請がありませんでした。');
   else alert(`${copied}日分の希望申請をコピーしました。`);
 }
@@ -2693,27 +2694,30 @@ function buildStaffView(){
   });
 }
 
-function staffToggleReq(sIdx, key, type){
+async function staffToggleReq(sIdx, key, type){
   const cur = getRequest(sIdx, key);
   setRequest(sIdx, key, cur?.type===type ? null : {type});
-  saveRequests(); buildStaffView();
+  buildStaffView();
+  await saveRequests();
 }
-function staffSetCustom(sIdx, key, start, end){
+async function staffSetCustom(sIdx, key, start, end){
   const cur = getRequest(sIdx, key);
   if(cur?.type==='custom'&&cur.start===start&&cur.end===end){
-    setRequest(sIdx, key, null); // 同じなら解除
+    setRequest(sIdx, key, null);
   } else {
     setRequest(sIdx, key, {type:'custom', start, end});
   }
-  saveRequests(); buildStaffView();
+  buildStaffView();
+  await saveRequests();
 }
-function staffSetCustomFromInput(sIdx, key, dIdx){
+async function staffSetCustomFromInput(sIdx, key, dIdx){
   const start = document.getElementById(`cs-${sIdx}-${dIdx}`)?.value;
   const end   = document.getElementById(`ce-${sIdx}-${dIdx}`)?.value;
   if(!start||!end){ alert('開始・終了時間を入力してください'); return; }
   if(start>=end){ alert('終了時間は開始時間より後にしてください'); return; }
   setRequest(sIdx, key, {type:'custom', start, end});
-  saveRequests(); buildStaffView();
+  buildStaffView();
+  await saveRequests();
 }
 
 // ===== ユーザー管理 =====
