@@ -497,7 +497,23 @@ td.shift-cell { position: relative; }
   <div class="staff-cards" id="staffCards"></div>
 </div>
 <div class="panel" id="panel-month-cal" style="display:none;flex-direction:column">
+  <!-- タブ切替 -->
+  <div style="display:flex;gap:0;border-bottom:1px solid #334155;margin-bottom:12px">
+    <button id="cal-tab-acc" onclick="switchCalTab('acc')" style="padding:8px 18px;background:transparent;border:none;border-bottom:2px solid #7C3AED;color:#F1F5F9;font-size:12px;font-weight:700;cursor:pointer">📅 アカウント別</button>
+    <button id="cal-tab-staff" onclick="switchCalTab('staff')" style="padding:8px 18px;background:transparent;border:none;border-bottom:2px solid transparent;color:#64748B;font-size:12px;font-weight:700;cursor:pointer">👤 スタッフ別</button>
+  </div>
+  <!-- アカウント別カレンダー -->
   <div id="calContainer" style="width:100%"></div>
+  <!-- スタッフ別月次担当一覧 -->
+  <div id="staffCalContainer" style="display:none">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <select id="staffCalSel" onchange="buildStaffMonthCal()" style="background:#1E293B;border:1px solid #334155;color:#E2E8F0;border-radius:7px;padding:6px 12px;font-size:13px;font-weight:700;outline:none"></select>
+      <button onclick="staffCalPrev()" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:16px">‹</button>
+      <span id="staffCalMonthLabel" style="font-size:14px;font-weight:800;color:#F1F5F9"></span>
+      <button onclick="staffCalNext()" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:16px">›</button>
+    </div>
+    <div id="staffCalBody" style="overflow-x:auto"></div>
+  </div>
 </div>
 <div class="panel" id="panel-accounts" style="display:none">
   <div class="controls-row">
@@ -2141,6 +2157,109 @@ function keyToDateLabel(wOff, dIdx){
 let calYear  = new Date().getFullYear();
 let calMonth = new Date().getMonth();
 let calAccId = null;
+
+let adminStaffCalYear=new Date().getFullYear(), adminStaffCalMonth=new Date().getMonth();
+
+function switchCalTab(tab){
+  const isAcc=tab==='acc';
+  document.getElementById('calContainer').style.display=isAcc?'block':'none';
+  document.getElementById('staffCalContainer').style.display=isAcc?'none':'block';
+  document.getElementById('cal-tab-acc').style.borderBottomColor=isAcc?'#7C3AED':'transparent';
+  document.getElementById('cal-tab-acc').style.color=isAcc?'#F1F5F9':'#64748B';
+  document.getElementById('cal-tab-staff').style.borderBottomColor=isAcc?'transparent':'#7C3AED';
+  document.getElementById('cal-tab-staff').style.color=isAcc?'#64748B':'#F1F5F9';
+  if(!isAcc) initStaffMonthCal();
+}
+
+function initStaffMonthCal(){
+  const sel=document.getElementById('staffCalSel');
+  if(!sel) return;
+  sel.innerHTML=staff.map((s,i)=>`<option value="${i}">${s.name}</option>`).join('');
+  buildStaffMonthCal();
+}
+
+function staffCalPrev(){ adminStaffCalMonth--; if(adminStaffCalMonth<0){adminStaffCalMonth=11;adminStaffCalYear--;} buildStaffMonthCal(); }
+function staffCalNext(){ adminStaffCalMonth++; if(adminStaffCalMonth>11){adminStaffCalMonth=0;adminStaffCalYear++;} buildStaffMonthCal(); }
+
+function buildStaffMonthCal(){
+  const sel=document.getElementById('staffCalSel');
+  if(!sel) return;
+  const sIdx=parseInt(sel.value);
+  if(isNaN(sIdx)||!staff[sIdx]) return;
+  const s=staff[sIdx];
+  const yr=adminStaffCalYear, mo=adminStaffCalMonth;
+  const label=document.getElementById('staffCalMonthLabel');
+  if(label) label.textContent=`${yr}年 ${mo+1}月`;
+
+  const firstDay=new Date(yr,mo,1);
+  const lastDay=new Date(yr,mo+1,0);
+  const startDate=new Date(firstDay);
+  startDate.setDate(1-(firstDay.getDay()===0?6:firstDay.getDay()-1)); // 月曜始まり
+
+  // スタッフが担当するアカウント
+  const myAccounts=accounts.filter(a=>(s.accounts||[]).includes(a.id));
+
+  const DAY_HDRS=['月','火','水','木','金','土','日'];
+  const thStyle=(color)=>`style="background:#0F172A;color:${color};font-size:11px;font-weight:700;text-align:center;padding:6px 2px;border:1px solid #1E293B;min-width:80px"`;
+  let html=`<table style="width:100%;border-collapse:collapse;table-layout:fixed">
+    <thead><tr>
+      ${DAY_HDRS.map((d,i)=>`<th ${thStyle(i===5?'#93C5FD':i===6?'#F87171':'#64748B')}>${d}</th>`).join('')}
+    </tr></thead><tbody>`;
+
+  let cur=new Date(startDate);
+  while(cur<=lastDay){
+    html+='<tr>';
+    for(let dow=0;dow<7;dow++){
+      const d=new Date(cur);
+      const isThisMonth=d.getMonth()===mo&&d.getFullYear()===yr;
+      const day=d.getDate();
+      const isSun=dow===6,isSat=dow===5,isHol=isHoliday(d);
+      const numColor=isSun||isHol?'#F87171':isSat?'#93C5FD':'#94A3B8';
+      const bg=isThisMonth?'#131F32':'#0F172A';
+
+      // この日のシフトを全アカウントから収集
+      let shiftBadges='';
+      if(isThisMonth){
+        const wOff=getWeekOffsetForDate(d);
+        const dIdx=d.getDay()===0?6:d.getDay()-1; // 月=0〜日=6
+        const key=`${wOff}_${dIdx}`;
+        myAccounts.forEach(acc=>{
+          const sh=getShift(acc.id,sIdx,key);
+          if(!sh||sh.type==='off') return;
+          const def=getShiftDef(acc.id,sh.type);
+          const role=sh.role||(s.primaryRole)||'assistant';
+          const roleBg=role==='creator'?'#4C1D95':'#0C4A6E';
+          const roleFc=role==='creator'?'#DDD6FE':'#BAE6FD';
+          const roleLabel=role==='creator'?'CR':'AS';
+          const shiftBg=sh.type==='morning'?'#1C4532':sh.type==='noon'?'#1E3A5F':sh.type==='night'?'#3B0764':'#1E1B4B';
+          const shiftFc=sh.type==='morning'?'#6EE7B7':sh.type==='noon'?'#93C5FD':sh.type==='night'?'#D8B4FE':'#A78BFA';
+          shiftBadges+=`<div style="background:${shiftBg};border-radius:4px;padding:2px 4px;margin-bottom:2px">
+            <div style="display:flex;align-items:center;gap:3px;margin-bottom:1px">
+              <span style="width:6px;height:6px;border-radius:50%;background:${acc.color};display:inline-block"></span>
+              <span style="font-size:8px;font-weight:700;color:${acc.color}">${acc.name}</span>
+              <span style="font-size:8px;font-weight:800;background:${roleBg};color:${roleFc};border-radius:2px;padding:0 3px">${roleLabel}</span>
+            </div>
+            <div style="font-size:8px;color:${shiftFc}">${def?.label||''}${def?.sub?`<span style="color:#64748B"> ${def.sub}</span>`:''}</div>
+          </div>`;
+        });
+        if(!shiftBadges){
+          shiftBadges=`<div style="font-size:9px;color:#1E293B;text-align:center;padding:4px">休み</div>`;
+        }
+      }
+
+      html+=`<td style="background:${bg};border:1px solid #1E293B;padding:4px;vertical-align:top;opacity:${isThisMonth?1:0.2};min-height:60px">
+        <div style="font-size:10px;font-weight:700;color:${numColor};margin-bottom:3px">${day}${isHol&&isThisMonth?'<span style="font-size:7px;color:#F87171;margin-left:2px">祝</span>':''}</div>
+        ${isThisMonth?shiftBadges:''}
+      </td>`;
+      cur.setDate(cur.getDate()+1);
+    }
+    html+='</tr>';
+    if(cur>lastDay) break;
+  }
+  html+='</tbody></table>';
+  const body=document.getElementById('staffCalBody');
+  if(body) body.innerHTML=html;
+}
 
 function calPrevMonth(){ calMonth--; if(calMonth<0){calMonth=11;calYear--;} buildCalendar(); }
 function calNextMonth(){ calMonth++; if(calMonth>11){calMonth=0;calYear++;} buildCalendar(); }
