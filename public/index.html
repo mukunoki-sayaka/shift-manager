@@ -508,9 +508,9 @@ td.shift-cell { position: relative; }
   <div id="adminStaffCalContainer" style="display:none">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
       <select id="staffCalSel" onchange="buildStaffMonthCal()" style="background:#1E293B;border:1px solid #334155;color:#E2E8F0;border-radius:7px;padding:6px 12px;font-size:13px;font-weight:700;outline:none"></select>
-      <button onclick="staffCalPrev()" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:16px">‹</button>
+      <button onclick="adminStaffCalPrev()" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:16px">‹</button>
       <span id="staffCalMonthLabel" style="font-size:14px;font-weight:800;color:#F1F5F9"></span>
-      <button onclick="staffCalNext()" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:16px">›</button>
+      <button onclick="adminStaffCalNext()" style="background:#1E293B;border:1px solid #334155;color:#94A3B8;width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:16px">›</button>
     </div>
     <div id="staffCalBody" style="overflow-x:auto"></div>
   </div>
@@ -2184,8 +2184,8 @@ function initStaffMonthCal(){
   buildStaffMonthCal();
 }
 
-function staffCalPrev(){ adminStaffCalMonth--; if(adminStaffCalMonth<0){adminStaffCalMonth=11;adminStaffCalYear--;} buildStaffMonthCal(); }
-function staffCalNext(){ adminStaffCalMonth++; if(adminStaffCalMonth>11){adminStaffCalMonth=0;adminStaffCalYear++;} buildStaffMonthCal(); }
+function adminStaffCalPrev(){ adminStaffCalMonth--; if(adminStaffCalMonth<0){adminStaffCalMonth=11;adminStaffCalYear--;} buildStaffMonthCal(); }
+function adminStaffCalNext(){ adminStaffCalMonth++; if(adminStaffCalMonth>11){adminStaffCalMonth=0;adminStaffCalYear++;} buildStaffMonthCal(); }
 
 function buildStaffMonthCal(){
   const sel=document.getElementById('staffCalSel');
